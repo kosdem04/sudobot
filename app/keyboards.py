@@ -52,7 +52,7 @@ back_and_cancel = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='◀️ Н�
 
 sure = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='🌟 Да'),
                                       KeyboardButton(text='❌ Отмена')]],
-                                      resize_keyboard=True)  # параметр для отображения клавиатуры на разных устройствах
+                           resize_keyboard=True)  # параметр для отображения клавиатуры на разных устройствах
 
 
 create_and_back = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='➕ Создать заказ')],
@@ -79,6 +79,40 @@ client_order_menu = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text='🔹 В главное меню'),
      KeyboardButton(text='◀️ Назад')],
 ], resize_keyboard=True)  # параметр для отображения клавиатуры на разных устройствах
+
+
+# функция для отображения Inline кнопки всех откликов для заказа
+async def order_total_response(order_id, total_response):
+    kb = InlineKeyboardBuilder()
+    if total_response == 0:
+        kb.add(InlineKeyboardButton(text="Нет откликов",
+                                    callback_data="no_responses"))
+    else:
+        kb.add(InlineKeyboardButton(text=f"Посмотреть отклики ({total_response})",
+                                    callback_data=f"total-order-responses_{order_id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопок для показа меню клиенту в отклике
+async def client_response_menu(developer_username, response_id):
+    # Создаем инстанс клавиатуры
+    kb = InlineKeyboardBuilder()
+
+    # Создаем кнопки
+    button1 = InlineKeyboardButton(text="Написать разработчику", url=f"https://t.me/{developer_username}")
+    button2 = InlineKeyboardButton(text="Заказ выполнен", callback_data=f"choose-response_{response_id}")
+    button3 = InlineKeyboardButton(text="Отказать", callback_data=f"refusal-response_{response_id}")
+
+    # Добавляем первую кнопку на первую строку
+    kb.add(button1)
+
+    # Добавляем две другие кнопки на одну строку
+    kb.row(button2, button3)
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
 
 
 """
@@ -109,11 +143,32 @@ async def select_tariff(tariff):
     kb = InlineKeyboardBuilder()
     # каждый заказ оборачиваем в Inline кнопку
     kb.add(InlineKeyboardButton(text=f"Выбрать тариф",
-                                    callback_data=f"tariff_{tariff.id}"))
+                                callback_data=f"tariff_{tariff.id}"))
     kb.adjust(1)  # количество кнопок в одной строке
     # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
     return kb.as_markup()
 
+
+# функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
+async def order_info(order_id):
+    kb = InlineKeyboardBuilder()
+    # каждый заказ оборачиваем в Inline кнопку
+    kb.add(InlineKeyboardButton(text=f"Подробнее",
+                                callback_data=f"order-info_{order_id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопки 'Откликнуться' для отклика на заказ
+async def make_response(order_id):
+    kb = InlineKeyboardBuilder()
+    # каждый заказ оборачиваем в Inline кнопку
+    kb.add(InlineKeyboardButton(text=f"Откликнуться",
+                                callback_data=f"make-response_{order_id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
 
 """
 

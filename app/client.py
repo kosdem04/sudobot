@@ -1,3 +1,4 @@
+
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
@@ -55,6 +56,7 @@ async def client_after_register_menu(callback: CallbackQuery, state: FSMContext)
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
+@client.message(F.text == '◀️ Назад', st.ClientResponse.list)
 @client.message(F.text == '🔹 В главное меню', st.ClientOrder.order)
 @client.message(F.text == '◀️ Назад', st.ClientOrder.list)
 @client.message(F.text == '◀️ Назад', st.FAQ.client)
@@ -382,6 +384,116 @@ async def ok_delete_order(message: Message, state: FSMContext):
     except Exception:
         await message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+"""
+
+Действия в разделе "Отклики"
+----------------------------------------------------------------------------------------------
+"""
+@client.message(F.text == '◀️ Назад', st.ClientResponse.order_responses)
+@client.message(F.text == '💥 Отклики', st.ClientMenu.menu)
+async def client_response_list(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientResponse.list)
+        orders = await db.client_orders(message.from_user.id)
+        if not orders:
+            await message.answer('Нужен хотя бы один активный заказ',
+                                 reply_markup=kb.create_and_back)
+        else:
+            for order in orders:
+                total_response = await db.total_response(order.id)
+                await message.answer(f'<b>Заказ:</b> {order.title}',
+                                     reply_markup= await kb.order_total_response(order.id, total_response))
+            await message.answer('Меню 👇',
+                                 reply_markup=kb.back)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@client.callback_query(F.data == 'no_responses', st.ClientResponse.list)
+async def no_responses(callback: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('Нет откликов')
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @kosdem04')
+
+
+@client.callback_query(F.data.startswith('total-order-responses_'), st.ClientResponse.list)
+async def client_response_info(callback: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientResponse.order_responses)
+        # записываем в нужное нам состояние введённую информацию
+        #await state.update_data(order=callback.data.split('_')[1])
+        responses = await db.client_responses(callback.data.split('_')[1])
+        for response in responses:
+            developer = await db.get_developer(response.developer)
+            await callback.message.answer(f'<b>Разработчик</b>: @{developer.username}\n'
+                                          f'<b>Отклик</b>:\n{response.description}',
+                                          reply_markup=await kb.client_response_menu(developer.username, response.id))
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @kosdem04')
+
+
+@client.callback_query(F.data.startswith('refusal-response_'), st.ClientResponse.order_responses)
+async def refusal_response(callback: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        await callback.message.delete()
+        await db.refuse_response(callback.data.split('_')[1])
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @kosdem04')
+
+
+@client.callback_query(F.data.startswith('choose-response_'), st.ClientResponse.order_responses)
+async def choose_response(callback: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientResponse.sure_complete_order)
+        await state.update_data(sure_complete_order=callback.data.split('_')[1])
+        response = await db.get_response(callback.data.split('_')[1])
+        developer = await db.get_developer(response.developer)
+        await callback.message.answer(f'‼️ Подтвердите, что заказ действительно выполнил разработчик @{developer.username}',
+                                      reply_markup=kb.sure)
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @kosdem04')
+
+
+@client.message(F.text == '❌ Отмена', st.ClientResponse.sure_complete_order)
+async def cancel_choose_response(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientResponse.order_responses)
+        await callbackmessage.answer('Меню 👇',
+                             reply_markup=kb.back)
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @kosdem04')
 
 
 """

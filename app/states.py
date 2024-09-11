@@ -37,6 +37,13 @@ class ClientOrder(StatesGroup):
     sure = State()
 
 
+class ClientResponse(StatesGroup):
+    list = State()
+    order_responses = State()
+    sure_complete_order = State()
+
+
+
 class FAQ(StatesGroup):
     client = State()
     developer = State()
@@ -55,3 +62,9 @@ class DeveloperProfile(StatesGroup):
     profile = State()
     tariffs = State()
     pay_tariff = State()
+
+
+class Market(StatesGroup):
+    list = State()
+    order_info = State()
+    make_response = State()

@@ -82,6 +82,7 @@ async def developer_moderation_github(message: Message, bot: Bot, state: FSMCont
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
+@developer.message(F.text == '◀️ Назад', st.Market.list)
 @developer.message(F.text == '◀️ Назад', st.DeveloperProfile.profile)
 async def developer_main_menu(message: Message, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
@@ -94,6 +95,95 @@ async def developer_main_menu(message: Message, state: FSMContext):
     except Exception:
         await message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+"""
+
+Действия в разделе "Биржа"
+----------------------------------------------------------------------------------------------
+"""
+@developer.message(F.text == '❌ Отмена', st.Market.make_response)
+@developer.message(F.text == '◀️ Назад', st.Market.order_info)
+@developer.message(F.text == '💰 Биржа', st.DeveloperMenu.menu)
+async def market_list(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.Market.list)
+        await message.answer('💲 Заказы 💲')
+        orders = await db.all_orders()
+        for order in orders:
+            await message.answer(f'<b>Название:</b> {order.title}\n',
+                                 reply_markup=await kb.order_info(order.id))
+        await message.answer('Меню 👇',
+                             reply_markup=kb.back)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.callback_query(F.data.startswith('order-info_'), st.Market.list)
+async def market_order_info(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.Market.order_info)
+        await state.update_data(order_info=callback.data.split('_')[1])
+        await callback.answer('')
+        order = await db.get_order(callback.data.split('_')[1])
+        is_response = await db.is_response_from_developer(callback.from_user.id)
+        await callback.message.answer(f'Подробности заказа\n\n'
+                                      f'<b>Название:</b> {order.title}\n'
+                                      f'<b>Описание:</b> {order.description}'
+                                      f'{f'\n\n‼️ <b>Вы уже откликнулись на этот заказ</b>' if is_response else ''}',
+                                          reply_markup=None if is_response else await kb.make_response(order.id))
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.callback_query(F.data.startswith('make-response_'), st.Market.order_info)
+async def market_make_response(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.Market.make_response)
+        await callback.answer('')
+        await callback.message.answer('Введите текст для отклика (не более 1000 символов)',
+                                      reply_markup=kb.cancel)
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.message(st.Market.make_response)
+async def market_send_response(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        if len(message.text) > 10000:
+            await message.answer('Текст отклика не должен быть более 1000 символов')
+        else:
+            # берём данные из всех состояний
+            tdata = await state.get_data()
+            await db.add_response(message.from_user.id, tdata['order_info'], message.text)
+            await message.answer('Ваш отклик отправлен заказчику.')
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.Market.list)
+            await message.answer('💲 Заказы 💲')
+            orders = await db.all_orders()
+            for order in orders:
+                await message.answer(f'<b>Название:</b> {order.title}\n',
+                                     reply_markup=await kb.order_info(order.id))
+            await message.answer('Меню 👇',
+                                 reply_markup=kb.back)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
 
 
 """
@@ -122,6 +212,7 @@ async def developer_profile(message: Message, state: FSMContext):
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
+"""-------------------------------------------Выбор и покупка тарифа---------------------------------------------------"""
 @developer.message(F.text == '🤖 Выбрать тариф', st.DeveloperProfile.profile)
 async def list_of_tariffs(message: Message, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
