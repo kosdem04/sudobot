@@ -1,8 +1,8 @@
-
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.util import await_only
 
 import app.database.requests as db
 import app.states as st
@@ -56,6 +56,8 @@ async def client_after_register_menu(callback: CallbackQuery, state: FSMContext)
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
+@client.message(F.text == '◀️ Назад', st.ClientFeedback.list)
+@client.message(F.text == '◀️ Назад', st.OrderHistory.list)
 @client.message(F.text == '◀️ Назад', st.ClientResponse.list)
 @client.message(F.text == '🔹 В главное меню', st.ClientOrder.order)
 @client.message(F.text == '◀️ Назад', st.ClientOrder.list)
@@ -130,7 +132,7 @@ async def client_order_list(message: Message, state: FSMContext):
 
 
 @client.callback_query(F.data.startswith('order_'), st.ClientOrder.list)
-async def client_order_info(callback: Message, state: FSMContext):
+async def client_order_info(callback: CallbackQuery, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
@@ -152,7 +154,7 @@ async def client_order_info(callback: Message, state: FSMContext):
 
 
 """-------------------------------------------Создать заказ---------------------------------------------------"""
-@client.message(F.text == '➕ Создать заказ', st.ClientOrder.list)
+@client.message(F.text == '➕ Создать', st.ClientOrder.list)
 async def order_title(message: Message, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
@@ -416,7 +418,7 @@ async def client_response_list(message: Message, state: FSMContext):
 
 
 @client.callback_query(F.data == 'no_responses', st.ClientResponse.list)
-async def no_responses(callback: Message, state: FSMContext):
+async def no_responses(callback: CallbackQuery):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
@@ -428,7 +430,7 @@ async def no_responses(callback: Message, state: FSMContext):
 
 
 @client.callback_query(F.data.startswith('total-order-responses_'), st.ClientResponse.list)
-async def client_response_info(callback: Message, state: FSMContext):
+async def client_response_info(callback: CallbackQuery, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
@@ -436,13 +438,14 @@ async def client_response_info(callback: Message, state: FSMContext):
         await callback.answer('')
         # устанавливаем нужное FSM состояние
         await state.set_state(st.ClientResponse.order_responses)
-        # записываем в нужное нам состояние введённую информацию
-        #await state.update_data(order=callback.data.split('_')[1])
         responses = await db.client_responses(callback.data.split('_')[1])
+        order = await db.get_order(callback.data.split('_')[1])
+        await callback.message.answer(f'Отклики для заказа <b>{order.title}</b>')
         for response in responses:
             developer = await db.get_developer(response.developer)
-            await callback.message.answer(f'<b>Разработчик</b>: @{developer.username}\n'
-                                          f'<b>Отклик</b>:\n{response.description}',
+            await callback.message.answer(f'<b>Разработчик:</b> @{developer.username}\n'
+                                          f'<b>Рейтинг:</b> {developer.rating if developer.rating > 0 else 'Нет оценок'}\n'
+                                          f'<b>Отклик:</b> {response.description}',
                                           reply_markup=await kb.client_response_menu(developer.username, response.id))
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
@@ -450,7 +453,7 @@ async def client_response_info(callback: Message, state: FSMContext):
 
 
 @client.callback_query(F.data.startswith('refusal-response_'), st.ClientResponse.order_responses)
-async def refusal_response(callback: Message, state: FSMContext):
+async def refusal_response(callback: CallbackQuery):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
@@ -458,13 +461,15 @@ async def refusal_response(callback: Message, state: FSMContext):
         await callback.answer('')
         await callback.message.delete()
         await db.refuse_response(callback.data.split('_')[1])
+        if not await db.is_available_response_for_order(callback.data.split('_')[1]):
+            await callback.message.answer('Для данного заказа больше нет откликов')
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                                       'Введите команду /start или свяжитесь с @kosdem04')
 
 
 @client.callback_query(F.data.startswith('choose-response_'), st.ClientResponse.order_responses)
-async def choose_response(callback: Message, state: FSMContext):
+async def choose_response(callback: CallbackQuery, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
@@ -472,28 +477,232 @@ async def choose_response(callback: Message, state: FSMContext):
         await callback.answer('')
         # устанавливаем нужное FSM состояние
         await state.set_state(st.ClientResponse.sure_complete_order)
-        await state.update_data(sure_complete_order=callback.data.split('_')[1])
         response = await db.get_response(callback.data.split('_')[1])
         developer = await db.get_developer(response.developer)
-        await callback.message.answer(f'‼️ Подтвердите, что заказ действительно выполнил разработчик @{developer.username}',
-                                      reply_markup=kb.sure)
+        await callback.message.edit_text(f'‼️ Подтвердите, что заказ действительно выполнил разработчик @{developer.username}',
+                                      reply_markup=await kb.sure_complete_order(callback.data.split('_')[1]))
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                                       'Введите команду /start или свяжитесь с @kosdem04')
 
 
-@client.message(F.text == '❌ Отмена', st.ClientResponse.sure_complete_order)
-async def cancel_choose_response(message: Message, state: FSMContext):
+@client.callback_query(F.data.startswith('cancel-order-complete_'), st.ClientResponse.sure_complete_order)
+async def cancel_order_complete(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientResponse.order_responses)
+        response = await db.get_response(callback.data.split('_')[1])
+        developer = await db.get_developer(response.developer)
+        await callback.message.edit_text(f'<b>Разработчик</b>: @{developer.username}\n'
+                                          f'<b>Отклик</b>:\n{response.description}',
+                                          reply_markup=await kb.client_response_menu(developer.username, response.id))
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @kosdem04')
+
+
+
+@client.callback_query(F.data.startswith('order-complete_'), st.ClientResponse.sure_complete_order)
+async def order_complete(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        await db.order_complete(callback.data.split('_')[1])
+        await state.clear()
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientMenu.menu)
+        await callback.message.answer('Заказ добавлен в "Историю заказов"', reply_markup=kb.client_main)
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @kosdem04')
+
+
+"""
+
+Действия в разделе "История заказов"
+----------------------------------------------------------------------------------------------
+"""
+@client.message(F.text == '⏳ История заказов', st.ClientMenu.menu)
+async def order_history(message: Message, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
         # устанавливаем нужное FSM состояние
-        await state.set_state(st.ClientResponse.order_responses)
-        await callbackmessage.answer('Меню 👇',
-                             reply_markup=kb.back)
+        await state.set_state(st.OrderHistory.list)
+        orders = await db.order_history(message.from_user.id)
+        if not orders:
+            await message.answer('Нет заказов',
+                                 reply_markup=kb.back)
+        else:
+            for order in orders:
+                developer = await db.get_developer(order.developer)
+                await message.answer(f'<b>Заказ:</b> {order.title}\n'
+                                     f'<b>Исполнитель:</b> @{developer.username}\n'
+                                     f'<b>Дата:</b> {order.date.strftime('%d.%m.%Y')}\n',)
+            await message.answer('Меню 👇',
+                                 reply_markup=kb.back)
+    except Exception:
+        await message.answer('Произошла ошибка\n')
+
+
+
+"""
+
+Действия в разделе "Отзывы"
+----------------------------------------------------------------------------------------------
+"""
+@client.message(F.text == '❌ Отмена', st.ClientCreateFeedback.sure)
+@client.message(F.text == '❌ Отмена', st.ClientCreateFeedback.feedback)
+@client.message(F.text == '❌ Отмена', st.ClientCreateFeedback.mark)
+@client.message(F.text == '❌ Отмена', st.ClientCreateFeedback.select_order)
+@client.message(F.text == '⭐️ Отзывы', st.ClientMenu.menu)
+async def client_feedbacks(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientFeedback.list)
+        feedbacks = await db.client_feedbacks(message.from_user.id)
+        if not feedbacks:
+            await message.answer('Вы не написали ни одного отзыва',
+                                 reply_markup=kb.create_and_back)
+        else:
+            await message.answer('Ваши отзывы')
+            for feedback in feedbacks:
+                developer = await db.get_developer(feedback.developer)
+                await message.answer(f'<b>Заказ:</b> {feedback.title}\n'
+                                     f'<b>Исполнитель:</b> @{developer.username}\n'
+                                     f'<b>Ваша оценка:</b>  {feedback.mark_for_developer}\n'
+                                     f'<b>Ваш комментарий:</b>  {feedback.feedback_about_developer}\n'
+                                     f'<b>Дата:</b> {feedback.date.strftime('%d.%m.%Y')}\n')
+            await message.answer('Меню 👇',
+                                 reply_markup=kb.create_and_back)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+"""-------------------------------------------Создать отзыв---------------------------------------------------"""
+@client.message(F.text == '➕ Создать', st.ClientFeedback.list)
+async def client_create_feedback_select_order(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        orders = await db.orders_without_feedback_about_developer(message.from_user.id)
+        if not orders:
+            await message.answer('Вы написали отзывы для всех Ваших заказов или у Вас нет выполненных заказов',
+                                 reply_markup=kb.back)
+        else:
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.ClientCreateFeedback.select_order)
+            await message.answer(f'Выберите заказ, который хотите оценить:',
+                                 reply_markup=await kb.orders_without_feedback_about_developer(orders))
+            await message.answer('Меню 👇',
+                                 reply_markup=kb.cancel)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@client.callback_query(F.data.startswith('order-for-create-feedback_'), st.ClientCreateFeedback.select_order)
+async def client_create_feedback_mark(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        await state.update_data(select_order=callback.data.split('_')[1])
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientCreateFeedback.mark)
+        await callback.message.answer('Оцените работу исполнителя (от 1 до 5)')
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                                       'Введите команду /start или свяжитесь с @kosdem04')
+
+
+@client.message(st.ClientCreateFeedback.mark)
+async def client_create_feedback_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        if message.text not in ['1', '2', '3', '4', '5']:
+            await message.answer('Введённое вами значение некорректно\n'
+                                 'Оцените работу исполнителя (от 1 до 5)')
+        else:
+            # записываем в нужное нам состояние введённую информацию
+            await state.update_data(mark=message.text)
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.ClientCreateFeedback.feedback)
+            await message.answer('Напишите свой отзыв (до 1000 символов)')
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@client.message(st.ClientCreateFeedback.feedback)
+async def sure_client_create_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        if len(message.text) > 10000:
+            await message.answer('Отзыв не должен быть более 1000 символов')
+        else:
+            # записываем в нужное нам состояние введённую информацию
+            await state.update_data(feedback=message.text)
+            # берём данные из всех состояний
+            tdata = await state.get_data()
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.ClientCreateFeedback.sure)
+            order = await db.get_completed_order(tdata['select_order'])
+            await message.answer(f'Подтвердите, что вы хотите создать следующий отзыв?\n\n'
+                                 f'<b>Заказ:</b> {order.title}\n'
+                                 f'<b>Оценка:</b> {tdata['mark']}\n'
+                                 f'<b>Комментарий:</b> {tdata['feedback']}',
+                                 reply_markup=kb.sure)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@client.message(F.text == '🌟 Да', st.ClientCreateFeedback.sure)
+async def ok_client_create_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    #try:
+        # берём данные из всех состояний
+        tdata = await state.get_data()
+        order = await db.get_completed_order(tdata['select_order'])
+        total_feedbacks_about_developer = await db.feedbacks_about_developer(order.developer)
+        total_feedbacks_about_developer = len(total_feedbacks_about_developer)
+        # добавляем новый отзыв в БД
+        await db.add_client_feedback(tdata['select_order'], tdata['mark'],
+                                     tdata['feedback'], total_feedbacks_about_developer)
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.ClientFeedback.list)
+        feedbacks = await db.client_feedbacks(message.from_user.id)
+        if not feedbacks:
+            await message.answer('Вы не написали ни одного отзыва',
+                                 reply_markup=kb.create_and_back)
+        else:
+            await message.answer('Ваши отзывы')
+            for feedback in feedbacks:
+                developer = await db.get_developer(feedback.developer)
+                await message.answer(f'<b>Заказ:</b> {feedback.title}\n'
+                                     f'<b>Исполнитель:</b> @{developer.username}\n'
+                                     f'<b>Ваша оценка:</b>  {feedback.mark_for_developer}\n'
+                                     f'<b>Ваш комментарий:</b>  {feedback.feedback_about_developer}\n'
+                                     f'<b>Дата:</b> {feedback.date.strftime('%d.%m.%Y')}\n')
+            await message.answer('Меню 👇',
+                                 reply_markup=kb.create_and_back)
+    #except Exception:
+        #await message.answer('Произошла ошибка\n'
+                             #'Введите команду /start или свяжитесь с @mesudoteach')
 
 
 """
@@ -501,8 +710,6 @@ async def cancel_choose_response(message: Message, state: FSMContext):
 Действия в разделе "FAQ"
 ----------------------------------------------------------------------------------------------
 """
-
-
 @client.message(F.text == '💎 FAQ', st.ClientMenu.menu)
 async def client_faq(message: Message, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
@@ -526,7 +733,7 @@ async def client_faq(message: Message, state: FSMContext):
 
 
 @client.callback_query(lambda callback: callback.message.chat.id == ADMIN_ORDER_CHAT_ID, F.data.startswith('moderation-passed_'))  # хэндлер срабатывает только тогда, когда в нужный чат присылается сообщение
-async def moderation_passed(callback: Message, bot: Bot):
+async def moderation_passed(callback: CallbackQuery, bot: Bot):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
@@ -542,7 +749,7 @@ async def moderation_passed(callback: Message, bot: Bot):
 
 
 @client.callback_query(lambda callback: callback.message.chat.id == ADMIN_ORDER_CHAT_ID, F.data.startswith('moderation-failed_'))  # хэндлер срабатывает только тогда, когда в нужный чат присылается сообщение
-async def moderation_failed(callback: Message, bot: Bot):
+async def moderation_failed(callback: CallbackQuery, bot: Bot):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:

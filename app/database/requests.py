@@ -1,6 +1,6 @@
 from app.database.models import async_session
 from app.database.models import *
-from sqlalchemy import select, update, delete, desc
+from sqlalchemy import select, update, delete, desc, not_
 
 
 
@@ -116,6 +116,79 @@ async def get_response(response_id):
     async with async_session() as session:
         return await session.scalar(select(Response).where(Response.id == response_id))
 
+
+# проверка, есть ли для заказа отклики
+async def is_available_response_for_order(response_id):
+    async with async_session() as session:
+        response =  await session.scalar(select(Response).where(Response.id == response_id))
+        return True if await session.scalar(select(Response).where(Response.order == response.order,
+                                                                   Response.status == 'На рассмотрении у заказчика')) else False
+
+
+# после успешной модерации разрешаем разработчику доступ к панели разработчика
+async def order_complete(response_id):
+    async with async_session() as session:
+        response = await session.scalar(select(Response).where(Response.id == response_id))
+        order = await session.scalar(select(Order).where(Order.id == response.order))
+        developer = await session.scalar(select(Developer).where(Developer.tg_id == response.developer))
+        session.add(CompletedOrder(client=order.client, developer=developer.tg_id, title=order.title,
+                                   description=order.description, date=datetime.datetime.now()))
+        developer.completed_orders = developer.completed_orders + 1
+        # обновляем данные
+        await session.execute(update(Response).where(Response.order == response.order).values(status='Отказано'))
+        # удаляем нужный отклик
+        await session.delete(response)
+        await session.delete(order)
+        await session.commit()
+
+
+# берём из БД всю историю заказов конкретного клиента
+async def order_history(tg_id):
+    async with async_session() as session:
+        orders = await session.execute(select(CompletedOrder).where(CompletedOrder.client == tg_id))
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        orders = orders.scalars().all()
+        return orders
+
+
+# берём из БД все отзывы клиента
+async def client_feedbacks(tg_id):
+    async with async_session() as session:
+        feedback = await session.execute(select(CompletedOrder).where(CompletedOrder.client == tg_id,
+                                                                      CompletedOrder.mark_for_developer))
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        feedback = feedback.scalars().all()
+        return feedback
+
+
+# берём из БД все те выполненные заказы, у которых нет отзыва о разработчике
+async def orders_without_feedback_about_developer(tg_id):
+    async with async_session() as session:
+        orders = await session.execute(select(CompletedOrder).where(CompletedOrder.client == tg_id,
+                                                                      not_(CompletedOrder.mark_for_developer)))
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        orders = orders.scalars().all()
+        return orders
+
+
+# после успешной модерации разрешаем разработчику доступ к панели разработчика
+async def add_client_feedback(order_id, mark, feedback, total_feedbacks):
+    async with async_session() as session:
+        order = await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id))
+        developer = await session.scalar(select(Developer).where(Developer.tg_id == order.developer))
+        developer.rating = (developer.rating + int(mark))/(total_feedbacks+1)
+        # обновляем данные
+        await session.execute(update(CompletedOrder).where(CompletedOrder.id == order_id).values(
+            mark_for_developer=int(mark), feedback_about_developer=feedback))
+        await session.commit()
+
+
 """
 
 Запросы разработчиков к БД
@@ -208,6 +281,8 @@ async def add_response(developer_id, order_id, description):
     async with async_session() as session:
         session.add(Response(developer=developer_id, order=order_id, description=description,
                              status='На рассмотрении у заказчика'))
+        developer =await session.scalar(select(Developer).where(Developer.tg_id == developer_id))
+        developer.responses = developer.responses - 1
         await session.commit()
 
 
@@ -216,12 +291,70 @@ async def is_response_from_developer(developer_id):
         return True if await session.scalar(select(Response).where(Response.developer == developer_id)) else False
 
 
-# удаляем определённый заказ из БД
+async def is_response_from_developer_to_order(developer_id, order_id):
+    async with async_session() as session:
+        return True if await session.scalar(select(Response).where(Response.developer == developer_id,
+                                                                   Response.order == order_id)) else False
+
+
+# удаляем определённый отклик из БД
 async def delete_response(response_id):
     async with async_session() as session:
         response = await session.scalar(select(Response).where(Response.id == response_id))
         await session.delete(response)
         await session.commit()
 
+
+# берём из БД все отклики по текущему заказу
+async def developer_responses(tg_id):
+    async with async_session() as session:
+        responses = await session.execute(select(Response).where(Response.developer == tg_id))
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        responses = responses.scalars().all()
+        return responses
+
+
+# проверка, остались ли у разработчика отклики
+async def is_available_response(tg_id):
+    async with async_session() as session:
+        return await session.scalar(select(Developer.responses).where(Developer.tg_id == tg_id,
+                                                                    Developer.moderation == True))
+
+
+# проверка, есть ли для заказа отклики
+async def developer_is_client(tg_id):
+    async with async_session() as session:
+        return True if await session.scalar(select(Client).where(Client.tg_id == tg_id)) else False
+
+
+# берём из БД всю историю заказов конкретного клиента
+async def completed_orders(tg_id):
+    async with async_session() as session:
+        orders = await session.execute(select(CompletedOrder).where(CompletedOrder.developer == tg_id))
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        orders = orders.scalars().all()
+        return orders
+
+
+# получение информации о конкретном выполненном заказе
+async def get_completed_order(order_id):
+    async with async_session() as session:
+        return await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id))
+
+
+# берём из БД все отзывы о разработчике
+async def feedbacks_about_developer(tg_id):
+    async with async_session() as session:
+        feedback = await session.execute(select(CompletedOrder).where(CompletedOrder.developer == tg_id,
+                                                                      CompletedOrder.mark_for_developer))
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        feedback = feedback.scalars().all()
+        return feedback
 
 

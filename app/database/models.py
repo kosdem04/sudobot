@@ -60,7 +60,7 @@ class Order(Base):
     # внешний ключ для таблицы
     client_rel: Mapped["Client"] = relationship(back_populates="order_rel")
     # первичный ключ по отношению к таблице Response
-    response_rel: Mapped[List["Response"]] = relationship(back_populates="order_rel", cascade='all, delete')
+    response_rel: Mapped[List["Response"]] = relationship(back_populates="order_rel", cascade='save-update, merge')
 
 
 
@@ -73,7 +73,7 @@ class Developer(Base):
     rating = mapped_column(DECIMAL(3, 2), default=0)
     responses: Mapped[int] = mapped_column(default=0)
     completed_orders: Mapped[int] = mapped_column(default=0)
-    tariff: Mapped[int] = mapped_column(ForeignKey('tariffs.id', ondelete='CASCADE'), nullable=True)
+    tariff: Mapped[int] = mapped_column(ForeignKey('tariffs.id', ondelete='SET NULL'), nullable=True)
     balance: Mapped[float] = mapped_column(default=0)
     moderation: Mapped[bool] = mapped_column(default=False)
 
@@ -100,7 +100,7 @@ class Tariff(Base):
     # прописываем все отношения для таблицы
 
     # первичный ключ по отношению к таблице Developer
-    developer_rel: Mapped[List["Developer"]] = relationship(back_populates="tariff_rel", cascade='all, delete')
+    developer_rel: Mapped[List["Developer"]] = relationship(back_populates="tariff_rel", cascade='save-update, merge')
 
 
 # Таблица откликов
@@ -108,7 +108,7 @@ class Response(Base):
     __tablename__ = 'responses'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    order: Mapped[int] = mapped_column(ForeignKey('orders.id', ondelete='CASCADE'))
+    order: Mapped[int] = mapped_column(ForeignKey('orders.id', ondelete='SET NULL'), nullable=True)
     developer: Mapped[int] = mapped_column(ForeignKey('developers.tg_id', ondelete='CASCADE'))
     description: Mapped[str] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(50))
@@ -127,43 +127,15 @@ class CompletedOrder(Base):
     title: Mapped[str] = mapped_column(String(50))
     description: Mapped[str] = mapped_column(String(1000))
     developer: Mapped[int] = mapped_column(ForeignKey('developers.tg_id', ondelete='CASCADE'))
+    mark_for_client: Mapped[int] = mapped_column(nullable=True)
+    feedback_about_client: Mapped[str] = mapped_column(String(1000), nullable=True)
+    mark_for_developer: Mapped[int] = mapped_column(nullable=True)
+    feedback_about_developer: Mapped[str] = mapped_column(String(1000), nullable=True)
     date: Mapped[datetime.datetime]
 
     # прописываем все отношения для таблицы
     client_rel: Mapped["Client"] = relationship(back_populates="completed_order_rel")
     developer_rel: Mapped["Developer"] = relationship(back_populates="completed_order_rel")
-    # первичный ключ по отношению к таблице FeedbackAboutClient
-    feedback_about_client_rel: Mapped[List["FeedbackAboutClient"]] = relationship(back_populates="completed_order_rel",
-                                                                                  cascade='all, delete')
-    # первичный ключ по отношению к таблице FeedbackAboutDeveloper
-    feedback_about_developer_rel: Mapped[List["FeedbackAboutDeveloper"]] = relationship(
-        back_populates="completed_order_rel", cascade='all, delete')
-
-
-# Таблица отзывов о заказчиках
-class FeedbackAboutClient(Base):
-    __tablename__ = 'feedback_about_clients'
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    completed_order: Mapped[int] = mapped_column(ForeignKey('completed_orders.id', ondelete='CASCADE'))
-    description: Mapped[str] = mapped_column(String(1000))
-    mark: Mapped[int]
-
-    # прописываем все отношения для таблицы
-    completed_order_rel: Mapped["CompletedOrder"] = relationship(back_populates="feedback_about_client_rel")
-
-
-# Таблица отзывов о разработчиках
-class FeedbackAboutDeveloper(Base):
-    __tablename__ = 'feedback_about_developers'
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    completed_order: Mapped[int] = mapped_column(ForeignKey('completed_orders.id', ondelete='CASCADE'))
-    description: Mapped[str] = mapped_column(String(1000))
-    mark: Mapped[int]
-
-    # прописываем все отношения для таблицы
-    completed_order_rel: Mapped["CompletedOrder"] = relationship(back_populates="feedback_about_developer_rel")
 
 
 async def async_main():

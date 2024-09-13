@@ -55,7 +55,7 @@ sure = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='🌟 Да'),
                            resize_keyboard=True)  # параметр для отображения клавиатуры на разных устройствах
 
 
-create_and_back = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='➕ Создать заказ')],
+create_and_back = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='➕ Создать')],
                                                 [KeyboardButton(text='◀️ Назад')]],
                                       resize_keyboard=True)  # параметр для отображения клавиатуры на разных устройствах
 
@@ -114,6 +114,32 @@ async def client_response_menu(developer_username, response_id):
     return kb.as_markup()
 
 
+# функция для отображения Inline кнопок для подтверждения выполнения заказа
+async def sure_complete_order(response_id):
+    # Создаем инстанс клавиатуры
+    kb = InlineKeyboardBuilder()
+
+    # Создаем кнопки
+    button2 = InlineKeyboardButton(text="🌟 Да", callback_data=f"order-complete_{response_id}")
+    button3 = InlineKeyboardButton(text="❌ Отмена", callback_data=f"cancel-order-complete_{response_id}")
+
+    # Добавляем две другие кнопки на одну строку
+    kb.row(button2, button3)
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопок всех выполненных заказов пользователя, у которых нет отзывов
+async def orders_without_feedback_about_developer(orders):
+    kb = InlineKeyboardBuilder()
+    for order in orders:
+        # каждый заказ оборачиваем в Inline кнопку
+        kb.add(InlineKeyboardButton(text=f"{order.title}",
+                                    callback_data=f"order-for-create-feedback_{order.id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
 
 """
 
@@ -123,9 +149,9 @@ async def client_response_menu(developer_username, response_id):
 # главное меню разработчика
 developer_main = ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text='💰 Биржа'),
+     KeyboardButton(text='💥️ Мои отклики')],
+    [KeyboardButton(text='🔹 Выполненные заказы'),
      KeyboardButton(text='🧑‍💻 Мой профиль')],
-    [KeyboardButton(text='🔹 Мои заказы'),
-     KeyboardButton(text='⭐️ Отзывы')],
     [KeyboardButton(text='💎 FAQ'),
      KeyboardButton(text='😁 Стать заказчиком')],
 ], resize_keyboard=True)  # параметр для отображения клавиатуры на разных устройствах
@@ -169,6 +195,55 @@ async def make_response(order_id):
     kb.adjust(1)  # количество кнопок в одной строке
     # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
     return kb.as_markup()
+
+
+# функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
+async def delete_response(response_id):
+    kb = InlineKeyboardBuilder()
+    # каждый заказ оборачиваем в Inline кнопку
+    kb.add(InlineKeyboardButton(text="Удалить отклик",
+                                callback_data=f"delete-response_{response_id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопок для подтверждения выполнения заказа
+async def sure_delete_response(response_id):
+    # Создаем инстанс клавиатуры
+    kb = InlineKeyboardBuilder()
+
+    # Создаем кнопки
+    button2 = InlineKeyboardButton(text="🌟 Да", callback_data=f"ok-delete-response_{response_id}")
+    button3 = InlineKeyboardButton(text="❌ Отмена", callback_data=f"cancel-delete-response_{response_id}")
+
+    # Добавляем две другие кнопки на одну строку
+    kb.row(button2, button3)
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
+async def completed_orders_menu(order_id):
+    kb = InlineKeyboardBuilder()
+    # каждый заказ оборачиваем в Inline кнопку
+    kb.add(InlineKeyboardButton(text="Подробнее",
+                                callback_data=f"completed-order-info_{order_id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
+async def completed_order_info(order_id):
+    kb = InlineKeyboardBuilder()
+    # каждый заказ оборачиваем в Inline кнопку
+    kb.add(InlineKeyboardButton(text="Скрыть",
+                                callback_data=f"hide-completed-order-info_{order_id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
 
 """
 
