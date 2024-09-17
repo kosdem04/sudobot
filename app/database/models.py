@@ -33,6 +33,7 @@ class Client(Base):
     tg_id = mapped_column(BigInteger, primary_key=True)
     #username: Mapped[str] = mapped_column(String(100))
     rating = mapped_column(DECIMAL(3, 2), default=0)
+    completed_orders: Mapped[int] = mapped_column(default=0)
     #name: Mapped[str] = mapped_column(String(100), default='client')
 
     # прописываем все отношения для таблицы

@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from pyexpat.errors import messages
 from sqlalchemy.util import await_only
 
+from app.client import order_history
 from config import ADMIN_DEVELOPER_CHAT_ID
 import app.database.requests as db
 import app.states as st
@@ -134,25 +135,9 @@ async def market_list(message: Message, state: FSMContext):
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
+@developer.callback_query(F.data.startswith('prev-market-order_'), st.Market.list)
 @developer.callback_query(F.data.startswith('next-market-order_'), st.Market.list)
 async def next_market_order(callback: CallbackQuery, state: FSMContext):
-    # конструкция try except ловит и выводит сообщение об ошибке,
-    # а также не даёт им остановить работу программы
-    try:
-        await callback.answer('')
-        page = int(callback.data.split('_')[1])
-        orders = await db.all_orders_pagination(page)
-        tdata = await state.get_data()
-        total_pages = tdata['total_pages']
-        await callback.message.edit_text(f'<b>Страница {page} из {total_pages}</b>',
-                             reply_markup=await kb.all_orders_pagination(orders, page, total_pages))
-    except Exception:
-        await callback.message.answer('Произошла ошибка\n'
-                             'Введите команду /start или свяжитесь с @mesudoteach')
-
-
-@developer.callback_query(F.data.startswith('prev-market-order_'), st.Market.list)
-async def prev_market_order(callback: CallbackQuery, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
@@ -367,19 +352,21 @@ async def developer_responses(message: Message, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
-        # устанавливаем нужное FSM состояние
-        await state.set_state(st.DeveloperResponse.list)
         if await db.is_response_from_developer(message.from_user.id):
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.DeveloperResponse.list)
             responses = await db.developer_responses(message.from_user.id)
-            for response in responses:
-                order = await db.get_order(response.order)
-                await message.answer(f'{f'<b>Заказ</b>: {order.title}' if order else 'Заказ выполнен другим исполнителем'}\n'
-                                     f'<b>Отклик</b>: {response.description}\n'
-                                     f'<b>Статус</b>: {response.status}',
-                                     reply_markup=await kb.delete_response(response.id))
+            total_pages = (len(responses) + 5 - 1) // 5  # Общее количество страниц
+            await state.update_data(total_pages=total_pages)
+            await state.update_data(page=1)
+            responses = await db.developer_responses_pagination(message.from_user.id, 1)
+            await message.answer(f'<b>Страница 1 из {total_pages}</b>',
+                                 reply_markup=await kb.developer_responses_pagination(responses, 1, total_pages))
             await message.answer('Меню 👇',
                                  reply_markup=kb.back)
         else:
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.DeveloperResponse.list)
             await message.answer('У вас нет откликов',
                                      reply_markup= kb.back)
     except Exception:
@@ -387,7 +374,67 @@ async def developer_responses(message: Message, state: FSMContext):
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
-@developer.callback_query(F.data.startswith('delete-response_'), st.DeveloperResponse.list)
+@developer.callback_query(F.data.startswith('prev-developer-responses_'), st.DeveloperResponse.list)
+@developer.callback_query(F.data.startswith('next-developer-responses_'), st.DeveloperResponse.list)
+async def developer_responses_pagination(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        await callback.answer('')
+        page = int(callback.data.split('_')[1])
+        await state.update_data(page=page)
+        responses = await db.developer_responses_pagination(callback.from_user.id, page)
+        tdata = await state.get_data()
+        total_pages = tdata['total_pages']
+        await callback.message.edit_text(f'<b>Страница {page} из {total_pages}</b>',
+                             reply_markup=await kb.developer_responses_pagination(responses, page, total_pages))
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.callback_query(F.data.startswith('developer-response-info_'), st.DeveloperResponse.list)
+async def developer_response_info(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.DeveloperResponse.response_info)
+        response = await db.get_response(callback.data.split('_')[1])
+        order = await db.get_order(response.order)
+        await callback.message.edit_text(f'{f'<b>Заказ</b>: {order.title}' if order else
+        'Заказ перемещён в архив'}\n'
+                                         f'<b>Отклик</b>: {response.description}\n'
+                                         f'<b>Статус</b>: {response.status}',
+                             reply_markup=await kb.delete_response(response.id))
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.callback_query(F.data == 'hide_developer_response_info', st.DeveloperResponse.response_info)
+async def hide_developer_response_info(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        await state.set_state(st.DeveloperResponse.list)
+        tdata = await state.get_data()
+        page = tdata['page']
+        total_pages = tdata['total_pages']
+        responses = await db.developer_responses_pagination(callback.from_user.id, page)
+        await callback.message.edit_text(f'<b>Страница {page} из {total_pages}</b>',
+                                         reply_markup=await kb.developer_responses_pagination(responses, page,
+                                                                                              total_pages))
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.callback_query(F.data.startswith('delete-response_'), st.DeveloperResponse.response_info)
 async def delete_response(callback: CallbackQuery, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
@@ -411,7 +458,7 @@ async def cancel_delete_response(callback: CallbackQuery, state: FSMContext):
         # ответ на callback
         await callback.answer('')
         # устанавливаем нужное FSM состояние
-        await state.set_state(st.DeveloperResponse.list)
+        await state.set_state(st.DeveloperResponse.response_info)
         response = await db.get_response(callback.data.split('_')[1])
         order = await db.get_order(response.order)
         await callback.message.edit_text(f'<b>Заказ</b>: {order.title}\n'
@@ -433,7 +480,13 @@ async def ok_delete_response(callback: CallbackQuery, state: FSMContext):
         # устанавливаем нужное FSM состояние
         await state.set_state(st.DeveloperResponse.list)
         await db.delete_response(callback.data.split('_')[1])
-        await callback.message.delete()
+        responses = await db.developer_responses(callback.from_user.id)
+        total_pages = (len(responses) + 5 - 1) // 5  # Общее количество страниц
+        await state.update_data(total_pages=total_pages)
+        await state.update_data(page=1)
+        responses = await db.developer_responses_pagination(callback.from_user.id, 1)
+        await callback.message.edit_text(f'<b>Страница 1 из {total_pages}</b>',
+                             reply_markup=await kb.developer_responses_pagination(responses, 1, total_pages))
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                                       'Введите команду /start или свяжитесь с @mesudoteach')
@@ -444,6 +497,12 @@ async def ok_delete_response(callback: CallbackQuery, state: FSMContext):
 Действия в разделе "Выполненные заказы"
 ----------------------------------------------------------------------------------------------
 """
+@developer.message(F.text == '❌ Отмена', st.DeveloperEditFeedback.sure)
+@developer.message(F.text == '❌ Отмена', st.DeveloperEditFeedback.feedback)
+@developer.message(F.text == '❌ Отмена', st.DeveloperEditFeedback.mark)
+@developer.message(F.text == '❌ Отмена', st.DeveloperCreateFeedback.sure)
+@developer.message(F.text == '❌ Отмена', st.DeveloperCreateFeedback.feedback)
+@developer.message(F.text == '❌ Отмена', st.DeveloperCreateFeedback.mark)
 @developer.message(F.text == '◀️ Назад', st.CompletedOrder.order_info)
 @developer.message(F.text == '🔹 Выполненные заказы', st.DeveloperMenu.menu)
 async def completed_orders(message: Message, state: FSMContext):
@@ -472,6 +531,7 @@ async def completed_orders(message: Message, state: FSMContext):
                                       'Введите команду /start или свяжитесь с @mesudoteach')
 
 
+@developer.callback_query(F.data.startswith('prev-completed-order_'), st.CompletedOrder.list)
 @developer.callback_query(F.data.startswith('next-completed-order_'), st.CompletedOrder.list)
 async def next_completed_order(callback: CallbackQuery, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
@@ -481,24 +541,6 @@ async def next_completed_order(callback: CallbackQuery, state: FSMContext):
         page = int(callback.data.split('_')[1])
         await state.update_data(page=page)
         orders = await db.completed_orders_pagination(callback.from_user.id, page)
-        tdata = await state.get_data()
-        total_pages = tdata['total_pages']
-        await callback.message.edit_text(f'<b>Страница {page} из {total_pages}</b>',
-                             reply_markup=await kb.completed_orders_pagination(orders, page, total_pages))
-    except Exception:
-        await callback.message.answer('Произошла ошибка\n'
-                             'Введите команду /start или свяжитесь с @mesudoteach')
-
-
-@developer.callback_query(F.data.startswith('prev-completed-order_'), st.CompletedOrder.list)
-async def prev_completed_order(callback: CallbackQuery, state: FSMContext):
-    # конструкция try except ловит и выводит сообщение об ошибке,
-    # а также не даёт им остановить работу программы
-    try:
-        await callback.answer('')
-        page = int(callback.data.split('_')[1])
-        await state.update_data(page=page)
-        orders = await db.completed_orders_pagination(callback.from_user.id ,page)
         tdata = await state.get_data()
         total_pages = tdata['total_pages']
         await callback.message.edit_text(f'<b>Страница {page} из {total_pages}</b>',
@@ -519,13 +561,17 @@ async def completed_order_info(callback: CallbackQuery, state: FSMContext):
         await state.set_state(st.CompletedOrder.order_info)
         order = await db.get_completed_order(callback.data.split('_')[1])
         await callback.message.edit_text(f'<b>Заказ:</b> {order.title}\n'
-                                         f'<b>Описание заказа:</b> {order.description}\n'
+                                         f'<b>Описание заказа:</b> {order.description}\n\n'
                                          f'<b>Оценка заказчика:</b>  {order.mark_for_developer 
                                          if order.mark_for_developer else 'Не оценено'}\n'
                                          f'<b>Комментарий заказчика:</b> {order.feedback_about_developer 
-                                         if order.feedback_about_developer else 'Нет комментария'}\n'
+                                         if order.feedback_about_developer else 'Нет комментария'}\n\n'
+                                         f'<b>Ваша оценка:</b>  {order.mark_for_client 
+                                         if order.mark_for_client else 'Не оценено'}\n'
+                                         f'<b>Ваш комментарий:</b> {order.feedback_about_client 
+                                         if order.feedback_about_client else 'Нет комментария'}\n\n'
                                          f'<b>Дата:</b> {order.date.strftime('%d.%m.%Y')}\n',
-                                     reply_markup=await kb.completed_order_info())
+                                     reply_markup=await kb.completed_order_info(order))
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                                       'Введите команду /start или свяжитесь с @mesudoteach')
@@ -549,6 +595,189 @@ async def hide_completed_order_info(callback: CallbackQuery, state: FSMContext):
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                                       'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+"""--------------------------------Добавление отзыва---------------------------------------------"""
+@developer.callback_query(F.data.startswith('developer-create-feedback_'), st.CompletedOrder.order_info)
+async def developer_create_feedback_mark(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        await state.update_data(select_order=callback.data.split('_')[1])
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.DeveloperCreateFeedback.mark)
+        await callback.message.answer('Оцените ваше общение с заказчиком (от 1 до 5)', reply_markup=kb.cancel)
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.message(st.DeveloperCreateFeedback.mark)
+async def developer_create_feedback_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        if message.text not in ['1', '2', '3', '4', '5']:
+            await message.answer('Введённое вами значение некорректно\n'
+                                 'Оцените ваше общение с заказчиком (от 1 до 5)')
+        else:
+            # записываем в нужное нам состояние введённую информацию
+            await state.update_data(mark=message.text)
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.DeveloperCreateFeedback.feedback)
+            await message.answer('Напишите свой отзыв (до 1000 символов)')
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.message(st.DeveloperCreateFeedback.feedback)
+async def sure_developer_create_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        if len(message.text) > 10000:
+            await message.answer('Отзыв не должен быть более 1000 символов')
+        else:
+            # записываем в нужное нам состояние введённую информацию
+            await state.update_data(feedback=message.text)
+            # берём данные из всех состояний
+            tdata = await state.get_data()
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.DeveloperCreateFeedback.sure)
+            order = await db.get_completed_order(tdata['select_order'])
+            await message.answer(f'Подтвердите, что вы хотите создать следующий отзыв?\n\n'
+                                 f'<b>Заказ:</b> {order.title}\n'
+                                 f'<b>Оценка:</b> {tdata['mark']}\n'
+                                 f'<b>Комментарий:</b> {tdata['feedback']}',
+                                 reply_markup=kb.sure)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.message(F.text == '🌟 Да', st.DeveloperCreateFeedback.sure)
+async def ok_developer_create_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # берём данные из всех состояний
+        tdata = await state.get_data()
+        order = await db.get_completed_order(tdata['select_order'])
+        total_feedbacks_about_client = await db.feedbacks_about_client(order.client)
+        mark_sum_about_client = sum(feedback.mark_for_client for feedback in total_feedbacks_about_client)
+        total_feedbacks_about_client = len(total_feedbacks_about_client)
+        # добавляем новый отзыв в БД
+        await db.add_developer_feedback(tdata['select_order'], tdata['mark'],
+                                     tdata['feedback'], total_feedbacks_about_client, mark_sum_about_client)
+        orders = await db.completed_orders(message.from_user.id)
+        total_pages = (len(orders) + 5 - 1) // 5  # Общее количество страниц
+        await state.update_data(total_pages=total_pages)
+        await state.update_data(page=1)
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.CompletedOrder.list)
+        orders = await db.order_history_pagination(message.from_user.id, 1)
+        await message.answer(f'<b>Страница 1 из {total_pages}</b>',
+                             reply_markup=await kb.completed_orders_pagination(orders, 1, total_pages))
+        await message.answer('Меню 👇',
+                             reply_markup=kb.back)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+"""--------------------------------Изменение отзыва---------------------------------------------"""
+@developer.callback_query(F.data.startswith('developer-edit-feedback_'), st.CompletedOrder.order_info)
+async def developer_edit_feedback_mark(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # ответ на callback
+        await callback.answer('')
+        await state.update_data(select_order=callback.data.split('_')[1])
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.DeveloperEditFeedback.mark)
+        await callback.message.answer('Новая оценка (от 1 до 5)', reply_markup=kb.cancel)
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                                      'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.message(st.DeveloperEditFeedback.mark)
+async def developer_edit_feedback_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        if message.text not in ['1', '2', '3', '4', '5']:
+            await message.answer('Введённое вами значение некорректно\n'
+                                 'Введите новую оценку (от 1 до 5)')
+        else:
+            # записываем в нужное нам состояние введённую информацию
+            await state.update_data(mark=message.text)
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.DeveloperEditFeedback.feedback)
+            await message.answer('Напишите новый отзыв (до 1000 символов)')
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.message(st.DeveloperEditFeedback.feedback)
+async def sure_developer_edit_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        if len(message.text) > 10000:
+            await message.answer('Отзыв не должен быть более 1000 символов')
+        else:
+            # записываем в нужное нам состояние введённую информацию
+            await state.update_data(feedback=message.text)
+            # берём данные из всех состояний
+            tdata = await state.get_data()
+            # устанавливаем нужное FSM состояние
+            await state.set_state(st.DeveloperEditFeedback.sure)
+            order = await db.get_completed_order(tdata['select_order'])
+            await message.answer(f'Подтвердите, что вы хотите внести следующие изменения в отзыв?\n\n'
+                                 f'<b>Заказ:</b> {order.title}\n'
+                                 f'<b>Оценка:</b> {tdata['mark']}\n'
+                                 f'<b>Комментарий:</b> {tdata['feedback']}',
+                                 reply_markup=kb.sure)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.message(F.text == '🌟 Да', st.DeveloperEditFeedback.sure)
+async def ok_developer_edit_feedback(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # берём данные из всех состояний
+        tdata = await state.get_data()
+        order = await db.get_completed_order(tdata['select_order'])
+        total_feedbacks_about_client = await db.feedbacks_about_client(order.client)
+        mark_sum_about_client = sum(feedback.mark_for_client for feedback in total_feedbacks_about_client)
+        total_feedbacks_about_client = len(total_feedbacks_about_client)
+        # добавляем новый отзыв в БД
+        await db.edit_developer_feedback(tdata['select_order'], tdata['mark'],
+                                     tdata['feedback'], total_feedbacks_about_client, mark_sum_about_client)
+        await message.answer('Отзыв изменён')
+        orders = await db.completed_orders(message.from_user.id)
+        total_pages = (len(orders) + 5 - 1) // 5  # Общее количество страниц
+        await state.update_data(total_pages=total_pages)
+        await state.update_data(page=1)
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.CompletedOrder.list)
+        orders = await db.order_history_pagination(message.from_user.id, 1)
+        await message.answer(f'<b>Страница 1 из {total_pages}</b>',
+                             reply_markup=await kb.completed_orders_pagination(orders, 1, total_pages))
+        await message.answer('Меню 👇',
+                             reply_markup=kb.back)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
 
 
 """

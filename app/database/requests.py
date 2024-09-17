@@ -77,6 +77,9 @@ async def available_order(order_id):
 async def delete_order(order_id):
     async with async_session() as session:
         order = await session.scalar(select(Order).where(Order.id == order_id))
+        # обновляем данные
+        await session.execute(update(Response).where(Response.order == order_id).values(
+            status='Клиент удалил заказ'))
         await session.delete(order)
         await session.commit()
         return order
@@ -118,6 +121,21 @@ async def client_responses(order_id):
         return responses
 
 
+# берём из БД все заказы конкретного клиента
+async def client_responses_pagination(order_id, page):
+    async with async_session() as session:
+        # Сортируем заказы по дате создания в порядке убывания, пропускаем первые 10 и ограничиваем результат до 5
+        responses = await session.execute(
+            select(Response).where(Response.order == order_id,
+                                   Response.status == 'На рассмотрении у заказчика')
+            .order_by(Response.id.desc())  # Сортировка по id
+            .offset((page - 1) * 5)  # Пропускаем первые 5 заказов
+            .limit(5)  # Ограничение до 5 заказов
+        )
+        responses = responses.scalars().all()
+        return responses
+
+
 # после успешной модерации разрешаем разработчику доступ к панели разработчика
 async def refuse_response(response_id):
     async with async_session() as session:
@@ -145,11 +163,14 @@ async def order_complete(response_id):
         response = await session.scalar(select(Response).where(Response.id == response_id))
         order = await session.scalar(select(Order).where(Order.id == response.order))
         developer = await session.scalar(select(Developer).where(Developer.tg_id == response.developer))
+        client = await session.scalar(select(Client).where(Client.tg_id == response.client))
         session.add(CompletedOrder(client=order.client, developer=developer.tg_id, title=order.title,
                                    description=order.description, date=datetime.datetime.now()))
         developer.completed_orders = developer.completed_orders + 1
+        client.completed_orders = client.completed_orders + 1
         # обновляем данные
-        await session.execute(update(Response).where(Response.order == response.order).values(status='Отказано'))
+        await session.execute(update(Response).where(Response.order == response.order).values(
+            status='Заказ выполнен другим исполнителем'))
         # удаляем нужный отклик
         await session.delete(response)
         await session.delete(order)
@@ -181,10 +202,24 @@ async def order_history_pagination(tg_id, page):
         return orders
 
 
-# берём из БД все отзывы клиента
-async def client_feedbacks(tg_id):
+# проверка, существует ли разработчик с данным tg_id в БД, который прошёл модерацию
+async def is_feedback_about_developer(order_id):
     async with async_session() as session:
-        feedback = await session.execute(select(CompletedOrder).where(CompletedOrder.client == tg_id,
+        return True if await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id,
+                                                                    CompletedOrder.mark_for_developer)) else False
+
+
+# проверка, существует ли разработчик с данным tg_id в БД, который прошёл модерацию
+async def is_feedback_about_client(order_id):
+    async with async_session() as session:
+        return True if await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id,
+                                                                    CompletedOrder.mark_for_client)) else False
+
+
+# берём из БД все отзывы о разработчике
+async def feedbacks_about_developer(tg_id):
+    async with async_session() as session:
+        feedback = await session.execute(select(CompletedOrder).where(CompletedOrder.developer == tg_id,
                                                                       CompletedOrder.mark_for_developer))
         # Получаем результаты запроса из statistics и вызываем scalars(),
         # чтобы получить скалярные значения (простые значения, а не кортежи).
@@ -193,38 +228,24 @@ async def client_feedbacks(tg_id):
         return feedback
 
 
-# Отображение всех заказов
-async def client_feedbacks_pagination(tg_id, page):
-    async with async_session() as session:
-        # Сортируем заказы по дате создания в порядке убывания, пропускаем первые 10 и ограничиваем результат до 5
-        orders = await session.execute(
-            select(CompletedOrder).where(CompletedOrder.client == tg_id, CompletedOrder.mark_for_developer)
-            .order_by(CompletedOrder.date.desc())  # Сортировка по дате создания
-            .offset((page-1) * 5)  # Пропускаем первые 10 заказов
-            .limit(5)    # Ограничение до 10 заказов
-        )
-        orders = orders.scalars().all()
-        return orders
-
-
-# берём из БД все те выполненные заказы, у которых нет отзыва о разработчике
-async def orders_without_feedback_about_developer(tg_id):
-    async with async_session() as session:
-        orders = await session.execute(select(CompletedOrder).where(CompletedOrder.client == tg_id,
-                                                                      not_(CompletedOrder.mark_for_developer)))
-        # Получаем результаты запроса из statistics и вызываем scalars(),
-        # чтобы получить скалярные значения (простые значения, а не кортежи).
-        # Затем метод all() используется для извлечения всех результатов запроса.
-        orders = orders.scalars().all()
-        return orders
-
-
 # после успешной модерации разрешаем разработчику доступ к панели разработчика
-async def add_client_feedback(order_id, mark, feedback, total_feedbacks):
+async def add_client_feedback(order_id, mark, feedback, total_feedbacks, mark_sum_about_developer):
     async with async_session() as session:
         order = await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id))
         developer = await session.scalar(select(Developer).where(Developer.tg_id == order.developer))
-        developer.rating = (developer.rating + int(mark))/(total_feedbacks+1)
+        developer.rating = (mark_sum_about_developer + int(mark))/(total_feedbacks+1)
+        # обновляем данные
+        await session.execute(update(CompletedOrder).where(CompletedOrder.id == order_id).values(
+            mark_for_developer=int(mark), feedback_about_developer=feedback))
+        await session.commit()
+
+
+# после успешной модерации разрешаем разработчику доступ к панели разработчика
+async def edit_client_feedback(order_id, mark, feedback, total_feedbacks, mark_sum_about_developer):
+    async with async_session() as session:
+        order = await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id))
+        developer = await session.scalar(select(Developer).where(Developer.tg_id == order.developer))
+        developer.rating = ((mark_sum_about_developer - order.mark_for_developer) + int(mark))/total_feedbacks
         # обновляем данные
         await session.execute(update(CompletedOrder).where(CompletedOrder.id == order_id).values(
             mark_for_developer=int(mark), feedback_about_developer=feedback))
@@ -372,6 +393,20 @@ async def developer_responses(tg_id):
         return responses
 
 
+# Отображение всех заказов
+async def developer_responses_pagination(tg_id, page):
+    async with async_session() as session:
+        # Сортируем заказы по дате создания в порядке убывания, пропускаем первые 10 и ограничиваем результат до 5
+        responses = await session.execute(
+            select(Response).where(Response.developer == tg_id)
+            .order_by(Response.id.desc())  # Сортировка по дате создания
+            .offset((page-1) * 5)  # Пропускаем первые 10 заказов
+            .limit(5)    # Ограничение до 10 заказов
+        )
+        responses = responses.scalars().all()
+        return responses
+
+
 # проверка, остались ли у разработчика отклики
 async def is_available_response(tg_id):
     async with async_session() as session:
@@ -418,14 +453,37 @@ async def get_completed_order(order_id):
 
 
 # берём из БД все отзывы о разработчике
-async def feedbacks_about_developer(tg_id):
+async def feedbacks_about_client(tg_id):
     async with async_session() as session:
-        feedback = await session.execute(select(CompletedOrder).where(CompletedOrder.developer == tg_id,
-                                                                      CompletedOrder.mark_for_developer))
+        feedback = await session.execute(select(CompletedOrder).where(CompletedOrder.client == tg_id,
+                                                                      CompletedOrder.mark_for_client))
         # Получаем результаты запроса из statistics и вызываем scalars(),
         # чтобы получить скалярные значения (простые значения, а не кортежи).
         # Затем метод all() используется для извлечения всех результатов запроса.
         feedback = feedback.scalars().all()
         return feedback
 
+
+# после успешной модерации разрешаем разработчику доступ к панели разработчика
+async def add_developer_feedback(order_id, mark, feedback, total_feedbacks, mark_sum_about_client):
+    async with async_session() as session:
+        order = await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id))
+        client = await session.scalar(select(Client).where(Client.tg_id == order.developer))
+        client.rating = (mark_sum_about_client + int(mark))/(total_feedbacks+1)
+        # обновляем данные
+        await session.execute(update(CompletedOrder).where(CompletedOrder.id == order_id).values(
+            mark_for_client=int(mark), feedback_about_client=feedback))
+        await session.commit()
+
+
+# после успешной модерации разрешаем разработчику доступ к панели разработчика
+async def edit_developer_feedback(order_id, mark, feedback, total_feedbacks, mark_sum_about_client):
+    async with async_session() as session:
+        order = await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id))
+        client = await session.scalar(select(Client).where(Client.tg_id == order.developer))
+        client.rating = ((mark_sum_about_client - order.mark_for_client) + int(mark))/(total_feedbacks)
+        # обновляем данные
+        await session.execute(update(CompletedOrder).where(CompletedOrder.id == order_id).values(
+            mark_for_client=int(mark), feedback_about_client=feedback))
+        await session.commit()
 

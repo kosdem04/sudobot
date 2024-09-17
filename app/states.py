@@ -15,6 +15,10 @@ class ClientMenu(StatesGroup):
     menu = State()
 
 
+class ClientProfile(StatesGroup):
+    profile = State()
+
+
 class AddOrder(StatesGroup):
     title = State()
     description = State()
@@ -41,6 +45,7 @@ class ClientOrder(StatesGroup):
 class ClientResponse(StatesGroup):
     list = State()
     order_responses = State()
+    response_info = State()
     sure_complete_order = State()
 
 
@@ -49,14 +54,13 @@ class OrderHistory(StatesGroup):
     order_info = State()
 
 
-class ClientFeedback(StatesGroup):
-    list = State()
-    feedback_info = State()
-    developer = State()
-
-
 class ClientCreateFeedback(StatesGroup):
-    select_order = State()
+    mark = State()
+    feedback = State()
+    sure = State()
+
+
+class ClientEditFeedback(StatesGroup):
     mark = State()
     feedback = State()
     sure = State()
@@ -91,6 +95,7 @@ class Market(StatesGroup):
 
 class DeveloperResponse(StatesGroup):
     list = State()
+    response_info = State()
     delete_response = State()
 
 
@@ -98,3 +103,15 @@ class CompletedOrder(StatesGroup):
     list = State()
     order_info = State()
     sure_complete_order = State()
+
+
+class DeveloperCreateFeedback(StatesGroup):
+    mark = State()
+    feedback = State()
+    sure = State()
+
+
+class DeveloperEditFeedback(StatesGroup):
+    mark = State()
+    feedback = State()
+    sure = State()
