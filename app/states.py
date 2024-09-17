@@ -33,6 +33,7 @@ class DeleteOrder(StatesGroup):
 
 class ClientOrder(StatesGroup):
     list = State()
+    total_pages = State()
     order = State()
     sure = State()
 
@@ -45,12 +46,12 @@ class ClientResponse(StatesGroup):
 
 class OrderHistory(StatesGroup):
     list = State()
-    order_responses = State()
-    sure_complete_order = State()
+    order_info = State()
 
 
 class ClientFeedback(StatesGroup):
     list = State()
+    feedback_info = State()
     developer = State()
 
 
@@ -83,6 +84,7 @@ class DeveloperProfile(StatesGroup):
 
 class Market(StatesGroup):
     list = State()
+    total_pages = State()
     order_info = State()
     make_response = State()
 

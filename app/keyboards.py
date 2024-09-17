@@ -61,12 +61,18 @@ create_and_back = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='➕ Соз
 
 
 # функция для отображения Inline кнопок всех заказов пользователя
-async def client_orders(orders):
+async def client_orders(orders, page, total_pages):
     kb = InlineKeyboardBuilder()
     for order in orders:
         # каждый заказ оборачиваем в Inline кнопку
         kb.add(InlineKeyboardButton(text=f"{order.title}",
                                     callback_data=f"order_{order.id}"))
+    next_page = page + 1
+    is_next = 0 if next_page > total_pages else 1
+    if page > 1:
+        kb.add(InlineKeyboardButton(text="⬅️", callback_data=f"prev-client-order_{page - 1}"))
+    if is_next == 1:
+        kb.add(InlineKeyboardButton(text="➡️", callback_data=f"next-client-order_{page + 1}"))
     kb.adjust(1)  # количество кнопок в одной строке
     # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
     return kb.as_markup()
@@ -129,6 +135,22 @@ async def sure_complete_order(response_id):
     return kb.as_markup()
 
 
+async def client_feedbacks_pagination(feedbacks, page, total_pages):
+    kb = InlineKeyboardBuilder()
+
+    for feedback in feedbacks:
+        kb.add(InlineKeyboardButton(text=f"О заказе: {feedback.title}",
+                                    callback_data=f"client-feedback-info_{feedback.id}"))
+    next_page = page + 1
+    is_next = 0  if next_page > total_pages else 1
+    if page > 1:
+        kb.add(InlineKeyboardButton(text="⬅️", callback_data=f"prev-client-feedback_{page-1}"))
+    if is_next == 1:
+        kb.add(InlineKeyboardButton(text="➡️", callback_data=f"next-client-feedback_{page+1}"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 # функция для отображения Inline кнопок всех выполненных заказов пользователя, у которых нет отзывов
 async def orders_without_feedback_about_developer(orders):
     kb = InlineKeyboardBuilder()
@@ -136,6 +158,46 @@ async def orders_without_feedback_about_developer(orders):
         # каждый заказ оборачиваем в Inline кнопку
         kb.add(InlineKeyboardButton(text=f"{order.title}",
                                     callback_data=f"order-for-create-feedback_{order.id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопок всех заказов пользователя
+async def client_history_orders(orders, page, total_pages):
+    kb = InlineKeyboardBuilder()
+    for order in orders:
+        # каждый заказ оборачиваем в Inline кнопку
+        kb.add(InlineKeyboardButton(text=f"{order.title}",
+                                    callback_data=f"history-order_{order.id}"))
+    next_page = page + 1
+    is_next = 0 if next_page > total_pages else 1
+    if page > 1:
+        kb.add(InlineKeyboardButton(text="⬅️", callback_data=f"prev-client-history-order_{page - 1}"))
+    if is_next == 1:
+        kb.add(InlineKeyboardButton(text="➡️", callback_data=f"next-client-history-order_{page + 1}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
+async def history_order_info():
+    kb = InlineKeyboardBuilder()
+    # каждый заказ оборачиваем в Inline кнопку
+    kb.add(InlineKeyboardButton(text="Скрыть",
+                                callback_data="hide_history_order_info"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
+async def client_feedback_info():
+    kb = InlineKeyboardBuilder()
+    # каждый заказ оборачиваем в Inline кнопку
+    kb.add(InlineKeyboardButton(text="Скрыть",
+                                callback_data="hide_client_feedback_info"))
     kb.adjust(1)  # количество кнопок в одной строке
     # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
     return kb.as_markup()
@@ -176,11 +238,46 @@ async def select_tariff(tariff):
 
 
 # функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
-async def order_info(order_id):
+'''async def order_info(order_id):
     kb = InlineKeyboardBuilder()
     # каждый заказ оборачиваем в Inline кнопку
     kb.add(InlineKeyboardButton(text=f"Подробнее",
                                 callback_data=f"order-info_{order_id}"))
+    kb.adjust(1)  # количество кнопок в одной строке
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()'''
+
+
+async def all_orders_pagination(orders, page, total_pages):
+    kb = InlineKeyboardBuilder()
+
+    for order in orders:
+        kb.add(InlineKeyboardButton(text=f"{order.title}",
+                                    callback_data=f"order-info_{order.id}"))
+    next_page = page + 1
+    is_next = 0  if next_page > total_pages else 1
+    if page > 1:
+        kb.add(InlineKeyboardButton(text="⬅️", callback_data=f"prev-market-order_{page-1}"))
+    if is_next == 1:
+        kb.add(InlineKeyboardButton(text="➡️", callback_data=f"next-market-order_{page+1}"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+async def back_from_order_info():
+    kb = InlineKeyboardBuilder()
+    kb.add(InlineKeyboardButton(text="◀️ Назад",
+                                callback_data="back_from_order_info"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+# функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
+async def market_order_info():
+    kb = InlineKeyboardBuilder()
+    # каждый заказ оборачиваем в Inline кнопку
+    kb.add(InlineKeyboardButton(text="Скрыть",
+                                callback_data="hide_market_order_info"))
     kb.adjust(1)  # количество кнопок в одной строке
     # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
     return kb.as_markup()
@@ -192,6 +289,8 @@ async def make_response(order_id):
     # каждый заказ оборачиваем в Inline кнопку
     kb.add(InlineKeyboardButton(text=f"Откликнуться",
                                 callback_data=f"make-response_{order_id}"))
+    kb.add(InlineKeyboardButton(text="◀️ Назад",
+                                callback_data="back_from_order_info"))
     kb.adjust(1)  # количество кнопок в одной строке
     # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
     return kb.as_markup()
@@ -223,6 +322,22 @@ async def sure_delete_response(response_id):
     return kb.as_markup()
 
 
+async def completed_orders_pagination(orders, page, total_pages):
+    kb = InlineKeyboardBuilder()
+
+    for order in orders:
+        kb.add(InlineKeyboardButton(text=f"{order.title}",
+                                    callback_data=f"completed-order-info_{order.id}"))
+    next_page = page + 1
+    is_next = 0  if next_page > total_pages else 1
+    if page > 1:
+        kb.add(InlineKeyboardButton(text="⬅️", callback_data=f"prev-completed-order_{page-1}"))
+    if is_next == 1:
+        kb.add(InlineKeyboardButton(text="➡️", callback_data=f"next-completed-order_{page+1}"))
+    kb.adjust(1)
+    return kb.as_markup()
+
+
 # функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
 async def completed_orders_menu(order_id):
     kb = InlineKeyboardBuilder()
@@ -235,11 +350,11 @@ async def completed_orders_menu(order_id):
 
 
 # функция для отображения Inline кнопки 'Подробнее' для просмотра деталей заказа
-async def completed_order_info(order_id):
+async def completed_order_info():
     kb = InlineKeyboardBuilder()
     # каждый заказ оборачиваем в Inline кнопку
     kb.add(InlineKeyboardButton(text="Скрыть",
-                                callback_data=f"hide-completed-order-info_{order_id}"))
+                                callback_data="hide_completed_order_info"))
     kb.adjust(1)  # количество кнопок в одной строке
     # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
     return kb.as_markup()

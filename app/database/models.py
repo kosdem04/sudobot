@@ -30,7 +30,7 @@ class Admin(Base):  # название для SqlAlchemy
 class Client(Base):
     __tablename__ = 'clients'
 
-    tg_id: Mapped[int] = mapped_column(primary_key=True)
+    tg_id = mapped_column(BigInteger, primary_key=True)
     #username: Mapped[str] = mapped_column(String(100))
     rating = mapped_column(DECIMAL(3, 2), default=0)
     #name: Mapped[str] = mapped_column(String(100), default='client')
@@ -49,7 +49,7 @@ class Order(Base):
     __tablename__ = 'orders'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    client: Mapped[int] = mapped_column(ForeignKey('clients.tg_id', ondelete='CASCADE'))
+    client = mapped_column(BigInteger, ForeignKey('clients.tg_id', ondelete='CASCADE'))
     title: Mapped[str] = mapped_column(String(50))
     description: Mapped[str] = mapped_column(String(1000))
     date: Mapped[datetime.datetime]
@@ -68,7 +68,7 @@ class Order(Base):
 class Developer(Base):
     __tablename__ = 'developers'
 
-    tg_id: Mapped[int] = mapped_column(primary_key=True)
+    tg_id = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str] = mapped_column(String(100))
     rating = mapped_column(DECIMAL(3, 2), default=0)
     responses: Mapped[int] = mapped_column(default=0)
@@ -109,7 +109,7 @@ class Response(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     order: Mapped[int] = mapped_column(ForeignKey('orders.id', ondelete='SET NULL'), nullable=True)
-    developer: Mapped[int] = mapped_column(ForeignKey('developers.tg_id', ondelete='CASCADE'))
+    developer = mapped_column(BigInteger, ForeignKey('developers.tg_id', ondelete='CASCADE'))
     description: Mapped[str] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(50))
 
@@ -123,10 +123,10 @@ class CompletedOrder(Base):
     __tablename__ = 'completed_orders'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    client: Mapped[int] = mapped_column(ForeignKey('clients.tg_id', ondelete='CASCADE'))
+    client = mapped_column(BigInteger, ForeignKey('clients.tg_id', ondelete='CASCADE'))
     title: Mapped[str] = mapped_column(String(50))
     description: Mapped[str] = mapped_column(String(1000))
-    developer: Mapped[int] = mapped_column(ForeignKey('developers.tg_id', ondelete='CASCADE'))
+    developer = mapped_column(BigInteger, ForeignKey('developers.tg_id', ondelete='CASCADE'))
     mark_for_client: Mapped[int] = mapped_column(nullable=True)
     feedback_about_client: Mapped[str] = mapped_column(String(1000), nullable=True)
     mark_for_developer: Mapped[int] = mapped_column(nullable=True)
