@@ -8,6 +8,7 @@ from pyexpat.errors import messages
 from sqlalchemy.util import await_only
 
 from app.client import order_history
+from app.database.requests import feedbacks_about_client
 from config import ADMIN_DEVELOPER_CHAT_ID
 import app.database.requests as db
 import app.states as st
@@ -164,19 +165,22 @@ async def market_order_info(callback: CallbackQuery, state: FSMContext):
         order = await db.get_order(callback.data.split('_')[1])
         if await db.developer_is_client(callback.from_user.id, order):
             await callback.message.answer(f'Подробности заказа\n\n'
+                                          f'<b>Рейтинг заказчика:</b> {order.client_rel.rating if order.client_rel.rating > 0 else 'Нет оценок'}\n\n'
                                           f'<b>Название:</b> {order.title}\n'
                                           f'<b>Описание:</b> {order.description}\n'
                                           f'‼️ <b>Вы не можете откликнуться на свой заказ</b>',
                                           reply_markup=await kb.market_order_info())
         else:
+            await state.update_data(object_id=callback.data.split('_')[1])
             is_response = await db.is_response_from_developer_to_order(callback.from_user.id,
                                                                        callback.data.split('_')[1])
             await callback.message.answer(f'Подробности заказа\n\n'
+                                          f'<b>Рейтинг заказчика:</b> {order.client_rel.rating if order.client_rel.rating > 0 else 'Нет оценок'}\n\n'
                                           f'<b>Название:</b> {order.title}\n'
-                                          f'<b>Описание:</b> {order.description}'
+                                          f'<b>Описание:</b> {order.description}\n'
                                           f'{f'\n\n‼️ <b>Вы уже откликнулись на этот заказ</b>' if is_response else ''}',
                                               reply_markup=await kb.market_order_info()
-                                              if is_response else await kb.make_response(order.id))
+                                              if is_response else await kb.make_response(order))
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
@@ -190,6 +194,56 @@ async def hide_market_order_info(callback: CallbackQuery, state: FSMContext):
         await state.set_state(st.Market.list)
         await callback.answer('')
         await callback.message.delete()
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.callback_query(F.data.startswith('the-last-feedbacks-about-client_'), st.Market.order_info)
+async def the_last_feedbacks_about_client(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        tdata = await state.get_data()
+        await state.set_state(st.Market.feedbacks_about_client)
+        await callback.answer('')
+        feedbacks = await db.last_feedbacks_about_client(callback.data.split('_')[1])
+        text = '\n'.join(f'<b>Оценка:</b> {feedback.mark_for_client}\n'
+                         f'<b>Комментарий:</b> {feedback.feedback_about_client}\n' for feedback in feedbacks)
+        await callback.message.edit_text(f'{text}',
+                                         reply_markup=await kb.backs(tdata['object_id']))
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.callback_query(F.data.startswith('back_'), st.Market.feedbacks_about_client)
+async def back_to_market_order_info(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        await callback.answer('')
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.Market.order_info)
+        order = await db.get_order(callback.data.split('_')[1])
+        if await db.developer_is_client(callback.from_user.id, order):
+            await callback.message.edit_text(f'Подробности заказа\n\n'
+                                          f'<b>Рейтинг заказчика:</b> {order.client_rel.rating if order.client_rel.rating > 0 else 'Нет оценок'}\n\n'
+                                          f'<b>Название:</b> {order.title}\n'
+                                          f'<b>Описание:</b> {order.description}\n'
+                                          f'‼️ <b>Вы не можете откликнуться на свой заказ</b>',
+                                          reply_markup=await kb.market_order_info())
+        else:
+            await state.update_data(object_id=callback.data.split('_')[1])
+            is_response = await db.is_response_from_developer_to_order(callback.from_user.id,
+                                                                       callback.data.split('_')[1])
+            await callback.message.edit_text(f'Подробности заказа\n\n'
+                                          f'<b>Рейтинг заказчика:</b> {order.client_rel.rating if order.client_rel.rating > 0 else 'Нет оценок'}\n\n'
+                                          f'<b>Название:</b> {order.title}\n'
+                                          f'<b>Описание:</b> {order.description}\n'
+                                          f'{f'\n\n‼️ <b>Вы уже откликнулись на этот заказ</b>' if is_response else ''}',
+                                              reply_markup=await kb.market_order_info()
+                                              if is_response else await kb.make_response(order))
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
@@ -242,7 +296,8 @@ async def market_send_response(message: Message, state: FSMContext):
                 await state.clear()
                 # устанавливаем нужное FSM состояние
                 await state.set_state(st.DeveloperMenu.menu)
-                await message.answer('‼️ Истрачен ежедневный лимит откликов')
+                await message.answer('‼️ Истрачен ежедневный лимит откликов',
+                                     reply_markup=kb.developer_main)
     except Exception:
         await message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
@@ -263,19 +318,21 @@ async def developer_profile(message: Message, state: FSMContext):
         # устанавливаем нужное FSM состояние
         await state.set_state(st.DeveloperProfile.profile)
         developer_info = await db.get_developer(message.from_user.id)
-        tariff = await db.get_tariff(developer_info.tariff)
         await message.answer(f'<b>Юзернейм:</b> {developer_info.username}\n'
-                             f'<b>Тариф:</b> {tariff.name if tariff.name else 'Не выбран'}\n'
                              f'<b>Рейтинг:</b> {developer_info.rating if developer_info.rating > 0 else 'Нет оценок'}\n'
-                             f'<b>Количество выполненных заказов:</b> {developer_info.completed_orders}\n'
-                             f'<b>Количество доступных откликов:</b> {developer_info.responses}\n',
-                                 reply_markup= kb.developer_profile)
+                             f'<b>Количество выполненных заказов:</b> {developer_info.completed_orders}\n\n'
+                             f'<b>Тариф:</b> {developer_info.tariff_rel.name if developer_info.tariff_rel else 'Не выбран'}\n'
+                             f'<b>Количество доступных откликов:</b> {developer_info.responses}\n'
+                             f'<b>Дата окончания действия тарифа:</b> {developer_info.subscription_end_date.strftime('%d.%m.%Y')
+                             if developer_info.subscription_end_date else ''}',
+                             reply_markup=kb.developer_profile)
     except Exception:
         await message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
 """-------------------------------------------Выбор и покупка тарифа---------------------------------------------------"""
+@developer.message(F.text == '◀️ Назад', st.DeveloperProfile.pay_tariff)
 @developer.message(F.text == '🤖 Выбрать тариф', st.DeveloperProfile.profile)
 async def list_of_tariffs(message: Message, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
@@ -286,7 +343,9 @@ async def list_of_tariffs(message: Message, state: FSMContext):
         tariffs = await db.all_tariffs()
         for tariff in tariffs:
             await message.answer(f'<b>Название:</b> {tariff.name}\n'
-                                 f'<b>Описание:</b> {tariff.description}\n',
+                                 f'<b>Описание:</b> {tariff.description}\n\n'
+                                 f'<b>Откликов в день:</b> {tariff.responses}\n'
+                                 f'<b>Стоимость:</b> {tariff.amount}₽',
                                  reply_markup=await kb.select_tariff(tariff))
         await message.answer('Меню 👇',
                              reply_markup=kb.back)
@@ -308,7 +367,7 @@ async def select_tariff(callback: CallbackQuery, state: FSMContext):
                                               description='Оплата тарифа',
                                               payload=f'tariff_{tariff.id}',
                                               currency='XTR',
-                                              prices=[LabeledPrice(label='XTR', amount=tariff.amount)])
+                                              prices=[LabeledPrice(label='XTR', amount=tariff.amount*2)])
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
@@ -332,10 +391,12 @@ async def successful_payment(message: Message, state: FSMContext):
         await state.set_state(st.DeveloperProfile.profile)
         developer_info = await db.get_developer(message.from_user.id)
         await message.answer(f'<b>Юзернейм:</b> {developer_info.username}\n'
-                             f'<b>Тариф:</b> {tariff.name if tariff.name else 'Не выбран'}\n'
                              f'<b>Рейтинг:</b> {developer_info.rating if developer_info.rating > 0 else 'Нет оценок'}\n'
-                             f'<b>Количество выполненных заказов:</b> {developer_info.completed_orders}\n'
-                             f'<b>Количество доступных откликов:</b> {developer_info.responses}\n',
+                             f'<b>Количество выполненных заказов:</b> {developer_info.completed_orders}\n\n'
+                             f'<b>Тариф:</b> {tariff.name if tariff.name else 'Не выбран'}\n'
+                             f'<b>Количество доступных откликов:</b> {developer_info.responses}\n'
+                             f'<b>Дата окончания действия тарифа:</b> {developer_info.subscription_end_date.strftime('%d.%m.%Y')
+                             if developer_info.subscription_end_date else ''}',
                              reply_markup=kb.developer_profile)
     except Exception:
         await message.answer('Произошла ошибка\n'
@@ -403,8 +464,7 @@ async def developer_response_info(callback: CallbackQuery, state: FSMContext):
         # устанавливаем нужное FSM состояние
         await state.set_state(st.DeveloperResponse.response_info)
         response = await db.get_response(callback.data.split('_')[1])
-        order = await db.get_order(response.order)
-        await callback.message.edit_text(f'{f'<b>Заказ</b>: {order.title}' if order else
+        await callback.message.edit_text(f'{f'<b>Заказ</b>: {response.order_rel.title}' if response.order_rel else
         'Заказ перемещён в архив'}\n'
                                          f'<b>Отклик</b>: {response.description}\n'
                                          f'<b>Статус</b>: {response.status}',
@@ -460,8 +520,8 @@ async def cancel_delete_response(callback: CallbackQuery, state: FSMContext):
         # устанавливаем нужное FSM состояние
         await state.set_state(st.DeveloperResponse.response_info)
         response = await db.get_response(callback.data.split('_')[1])
-        order = await db.get_order(response.order)
-        await callback.message.edit_text(f'<b>Заказ</b>: {order.title}\n'
+        await callback.message.edit_text(f'{f'<b>Заказ</b>: {response.order_rel.title}' if response.order_rel else
+        'Заказ перемещён в архив'}\n'
                                  f'<b>Отклик</b>: {response.description}\n'
                                  f'<b>Статус</b>: {response.status}',
                                  reply_markup=await kb.delete_response(response.id))
@@ -521,7 +581,7 @@ async def completed_orders(message: Message, state: FSMContext):
             await state.update_data(page=1)
             # устанавливаем нужное FSM состояние
             await state.set_state(st.CompletedOrder.list)
-            orders = await db.order_history_pagination(message.from_user.id, 1)
+            orders = await db.completed_orders_pagination(message.from_user.id, 1)
             await message.answer(f'<b>Страница 1 из {total_pages}</b>',
                                  reply_markup=await kb.completed_orders_pagination(orders, 1, total_pages))
             await message.answer('Меню 👇',
@@ -589,7 +649,7 @@ async def hide_completed_order_info(callback: CallbackQuery, state: FSMContext):
         tdata = await state.get_data()
         page = tdata['page']
         total_pages = tdata['total_pages']
-        orders = await db.order_history_pagination(callback.from_user.id, page)
+        orders = await db.completed_orders_pagination(callback.from_user.id, page)
         await callback.message.edit_text(f'<b>Страница {page} из {total_pages}</b>',
                              reply_markup=await kb.completed_orders_pagination(orders, page, total_pages))
     except Exception:

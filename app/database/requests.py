@@ -1,6 +1,9 @@
+import datetime
+
 from app.database.models import async_session
 from app.database.models import *
 from sqlalchemy import select, update, delete, desc, not_
+from sqlalchemy.orm import joinedload
 
 
 
@@ -88,7 +91,7 @@ async def delete_order(order_id):
 # берём данные конкретного заказа
 async def get_order(order_id):
     async with async_session() as session:
-        return await session.scalar(select(Order).where(Order.id == order_id))
+        return await session.scalar(select(Order).options(joinedload(Order.client_rel)).where(Order.id == order_id))
 
 # изменение данных о заказе
 async def edit_order(order_id, title, description):
@@ -146,7 +149,23 @@ async def refuse_response(response_id):
 # берём данные о конкретном отклике
 async def get_response(response_id):
     async with async_session() as session:
-        return await session.scalar(select(Response).where(Response.id == response_id))
+        return await session.scalar(select(Response).options(joinedload(Response.developer_rel), joinedload(Response.order_rel))
+                                    .where(Response.id == response_id))
+
+
+# берём из БД все отзывы о разработчике
+async def last_feedbacks_about_developer(tg_id):
+    async with async_session() as session:
+        feedback = await session.execute(select(CompletedOrder).where(CompletedOrder.developer == tg_id,
+                                                                      CompletedOrder.mark_for_developer)
+                                         .order_by(CompletedOrder.date.desc())
+                                         .limit(3)  # Ограничение до 10 заказов
+                                         )
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        feedback = feedback.scalars().all()
+        return feedback
 
 
 # проверка, есть ли для заказа отклики
@@ -163,7 +182,7 @@ async def order_complete(response_id):
         response = await session.scalar(select(Response).where(Response.id == response_id))
         order = await session.scalar(select(Order).where(Order.id == response.order))
         developer = await session.scalar(select(Developer).where(Developer.tg_id == response.developer))
-        client = await session.scalar(select(Client).where(Client.tg_id == response.client))
+        client = await session.scalar(select(Client).where(Client.tg_id == order.client))
         session.add(CompletedOrder(client=order.client, developer=developer.tg_id, title=order.title,
                                    description=order.description, date=datetime.datetime.now()))
         developer.completed_orders = developer.completed_orders + 1
@@ -267,7 +286,7 @@ async def is_developer(tg_id):
 # берём данные о конкретном разработчике из БД
 async def get_developer(tg_id):
     async with async_session() as session:
-        return await session.scalar(select(Developer).where(Developer.tg_id == tg_id))
+        return await session.scalar(select(Developer).options(joinedload(Developer.tariff_rel)).where(Developer.tg_id == tg_id))
 
 
 # проверка, существует ли разработчик с данным tg_id в БД, который находится на модерации
@@ -324,7 +343,7 @@ async def get_tariff(tariff_id):
 async def tariff_payed(developer_id, tariff):
     async with async_session() as session:
         await session.execute(update(Developer).where(Developer.tg_id == developer_id).values(
-            responses=tariff.responses, tariff=tariff.id))
+            responses=tariff.responses, tariff=tariff.id, subscription_end_date=datetime.datetime.now() + datetime.timedelta(days=30)))
         await session.commit()
 
 
@@ -449,7 +468,8 @@ async def completed_orders_pagination(tg_id, page):
 # получение информации о конкретном выполненном заказе
 async def get_completed_order(order_id):
     async with async_session() as session:
-        return await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id))
+        return await session.scalar(select(CompletedOrder).options(joinedload(CompletedOrder.developer_rel)).
+                                    where(CompletedOrder.id == order_id))
 
 
 # берём из БД все отзывы о разработчике
@@ -464,11 +484,26 @@ async def feedbacks_about_client(tg_id):
         return feedback
 
 
+# берём из БД все отзывы о разработчике
+async def last_feedbacks_about_client(tg_id):
+    async with async_session() as session:
+        feedback = await session.execute(select(CompletedOrder).where(CompletedOrder.client == tg_id,
+                                                                      CompletedOrder.mark_for_client)
+                                         .order_by(CompletedOrder.date.desc())
+                                         .limit(3)  # Ограничение до 10 заказов
+                                         )
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        feedback = feedback.scalars().all()
+        return feedback
+
+
 # после успешной модерации разрешаем разработчику доступ к панели разработчика
 async def add_developer_feedback(order_id, mark, feedback, total_feedbacks, mark_sum_about_client):
     async with async_session() as session:
         order = await session.scalar(select(CompletedOrder).where(CompletedOrder.id == order_id))
-        client = await session.scalar(select(Client).where(Client.tg_id == order.developer))
+        client = await session.scalar(select(Client).where(Client.tg_id == order.client))
         client.rating = (mark_sum_about_client + int(mark))/(total_feedbacks+1)
         # обновляем данные
         await session.execute(update(CompletedOrder).where(CompletedOrder.id == order_id).values(
@@ -487,3 +522,115 @@ async def edit_developer_feedback(order_id, mark, feedback, total_feedbacks, mar
             mark_for_client=int(mark), feedback_about_client=feedback))
         await session.commit()
 
+
+"""
+
+Запросы администраторов к БД
+----------------------------------------------------------------------------------------------
+"""
+# добавляем тарифа в БД
+async def add_tariff(name, description, responses, amount):
+    async with async_session() as session:
+        session.add(Tariff(name=name, description=description, responses=responses,
+                             amount=amount))
+        await session.commit()
+
+
+# добавляем тарифа в БД
+async def edit_tariff(tariff_id ,name, description, responses, amount):
+    async with async_session() as session:
+        await session.execute(update(Tariff).where(Tariff.id == tariff_id).values(name=name, description=description,
+                                                                                  responses=responses, amount=amount))
+        await session.commit()
+
+
+# удаляем определённый отклик из БД
+async def delete_tariff(tariff_id):
+    async with async_session() as session:
+        tariff = await session.scalar(select(Tariff).where(Tariff.id == tariff_id))
+        await session.delete(tariff)
+        await session.commit()
+
+
+# Берем всех пользователей из БД
+async def all_users():
+    async with async_session() as session:
+        clients = await session.execute(select(Client))
+        clients = clients.scalars().all()
+        developers = await session.execute(select(Developer))
+        developers = developers.scalars().all()
+        recipients = clients + developers
+        return recipients
+
+
+# Берем всех пользователей из БД
+async def all_clients():
+    async with async_session() as session:
+        # выбираем пользователя по его телеграмм id
+        clients = await session.execute(select(Client))
+        # Получаем результаты запроса из users и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса
+        clients = clients.scalars().all()
+        return clients
+
+
+# Берем всех пользователей из БД
+async def all_developers():
+    async with async_session() as session:
+        # выбираем пользователя по его телеграмм id
+        developers = await session.execute(select(Developer))
+        # Получаем результаты запроса из users и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса
+        developers = developers.scalars().all()
+        return developers
+
+
+# Берем всех пользователей из БД
+async def developers_with_subscription_end_date():
+    async with async_session() as session:
+        developers = await session.execute(select(Developer))
+        developers = developers.scalars().all()
+        developers = [
+            developer for developer in developers
+            if developer.subscription_end_date and
+               developer.subscription_end_date.strftime('%d.%m.%Y') == datetime.datetime.now().strftime('%d.%m.%Y')
+        ]
+        return developers
+
+
+# Берем всех пользователей из БД
+async def developers_with_subscription():
+    async with async_session() as session:
+        developers = await session.execute(select(Developer).where(Developer.tariff))
+        developers = developers.scalars().all()
+        return developers
+
+# Берем всех пользователей из БД
+async def developers_without_subscription():
+    async with async_session() as session:
+        developers = await session.execute(select(Developer).where(Developer.tariff.is_(None)))
+        developers = developers.scalars().all()
+        return developers
+
+
+# удаляем определённый отклик из БД
+async def delete_subscription_for_tariff(developers):
+    async with async_session() as session:
+        for developer in developers:
+            developer.tariff = None
+            developer.subscription_end_date = None
+            developer.responses = 0
+            session.add(developer)
+        await session.commit()
+
+
+async def update_the_number_of_responses():
+    async with async_session() as session:
+        developers = await session.execute(select(Developer).where(Developer.tariff))
+        developers = developers.scalars().all()
+        for developer in developers:
+            tariff = await session.scalar(select(Tariff).where(Tariff.id == developer.tariff))
+            developer.responses = tariff.responses
+        await session.commit()

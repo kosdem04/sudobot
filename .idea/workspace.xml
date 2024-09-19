@@ -5,13 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2e0c2b55-3112-4261-a5b1-3b485b83e652" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/app/apshed.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/app/admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/admin.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/client.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/database/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/database/models.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/database/requests.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/database/requests.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/developer.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/developer.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/keyboards.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/keyboards.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app/states.py" beforeDir="false" afterPath="$PROJECT_DIR$/app/states.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/run.py" beforeDir="false" afterPath="$PROJECT_DIR$/run.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -39,15 +42,15 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.run.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;D:/my_projects/aiogram/finwallet&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;proofread&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.run.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "D:/my_projects/aiogram/wallet-main",
+    "settings.editor.selected.configurable": "proofread"
   }
-}</component>
+}]]></component>
   <component name="RunManager">
     <configuration name="run" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
       <module name="sudobot" />

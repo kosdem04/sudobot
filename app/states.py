@@ -46,6 +46,7 @@ class ClientResponse(StatesGroup):
     list = State()
     order_responses = State()
     response_info = State()
+    feedbacks_about_developer = State()
     sure_complete_order = State()
 
 
@@ -89,6 +90,7 @@ class DeveloperProfile(StatesGroup):
 class Market(StatesGroup):
     list = State()
     total_pages = State()
+    feedbacks_about_client = State()
     order_info = State()
     make_response = State()
 
@@ -114,4 +116,40 @@ class DeveloperCreateFeedback(StatesGroup):
 class DeveloperEditFeedback(StatesGroup):
     mark = State()
     feedback = State()
+    sure = State()
+
+
+"""
+
+Состояния для администраторов
+----------------------------------------------------------------------------------------------
+"""
+class AdminMenu(StatesGroup):
+    menu = State()
+
+
+class AdminTariff(StatesGroup):
+    all_tariffs = State()
+    delete_tariff = State()
+
+
+class AddTariff(StatesGroup):
+    name = State()
+    description = State()
+    responses = State()
+    amount = State()
+    sure = State()
+
+
+class EditTariff(StatesGroup):
+    name = State()
+    description = State()
+    responses = State()
+    amount = State()
+    sure = State()
+
+
+class SendAll(StatesGroup):
+    select_method = State()
+    message = State()
     sure = State()

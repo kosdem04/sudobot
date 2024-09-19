@@ -77,6 +77,7 @@ class Developer(Base):
     tariff: Mapped[int] = mapped_column(ForeignKey('tariffs.id', ondelete='SET NULL'), nullable=True)
     balance: Mapped[float] = mapped_column(default=0)
     moderation: Mapped[bool] = mapped_column(default=False)
+    subscription_end_date: Mapped[datetime.datetime] = mapped_column(nullable=True)
 
     # прописываем все отношения для таблицы
     tariff_rel: Mapped["Tariff"] = relationship(back_populates="developer_rel")
@@ -93,7 +94,7 @@ class Tariff(Base):
     __tablename__ = 'tariffs'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(25))
     responses: Mapped[int]
     description: Mapped[str] = mapped_column(String(1000))
     amount: Mapped[float] = mapped_column()
