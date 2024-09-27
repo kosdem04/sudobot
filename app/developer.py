@@ -1,7 +1,7 @@
 from tkinter.ttk import Label
 
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery
+from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, ReplyKeyboardRemove
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from pyexpat.errors import messages
@@ -31,7 +31,7 @@ async def developer_moderation(callback: CallbackQuery, state: FSMContext):
             await callback.message.answer('‼️ ВНИМАНИЕ ‼️\n\n'
                                           'Для того, чтобы стать разработчиком на нашей платформе, <b>ВАМ необходимо:</b>\n\n'
                                           '<b>1.</b> Убедиться, что Ваш аккаунт в телеграмме имеет "Имя пользователя"\n\n'
-                                          '<b>2.</b> В ответ на это сообщение отправить ссылку на <b>Ваш гитхаб (обязательно</b>)\n\n'
+                                          '<b>2.</b> В ответ на это сообщение отправить информацию о себе <b>(обязательно</b>)\n\n'
                                           '<b>3.</b> Ожидать результата модерации', reply_markup=kb.back)
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
@@ -51,7 +51,6 @@ async def become_developer(message: Message, state: FSMContext):
         elif await db.is_moderation_developer(message.from_user.id):
             await message.answer('Ваша заявка на рассмотрении')
         else:
-            await db.add_client(message.from_user.id)
             # устанавливаем нужное FSM состояние
             await state.set_state(st.Register.moderation)
             await message.answer('‼️ ВНИМАНИЕ ‼️\n\n'
@@ -79,12 +78,13 @@ async def developer_moderation_github(message: Message, bot: Bot, state: FSMCont
                                reply_markup=await kb.developer_moderation(message.from_user.id))
         # устанавливаем нужное FSM состояние
         await state.clear()
-        await message.answer('‼️ Ваша заявка отправлена на модерацию')
+        await message.answer('‼️ Ваша заявка отправлена на модерацию', reply_markup=ReplyKeyboardRemove())
     except Exception:
         await message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
+@developer.message(F.text == '◀️ Назад', st.FAQ.developer)
 @developer.message(F.text == '◀️ Назад', st.CompletedOrder.order_info)
 @developer.message(F.text == '◀️ Назад', st.CompletedOrder.list)
 @developer.message(F.text == '◀️ Назад', st.DeveloperResponse.delete_response)
@@ -363,11 +363,14 @@ async def select_tariff(callback: CallbackQuery, state: FSMContext):
         await state.set_state(st.DeveloperProfile.pay_tariff)
         await callback.answer('')
         tariff = await db.get_tariff(callback.data.split('_')[1])
-        await callback.message.answer_invoice(title='Оплата тарифа',
-                                              description='Оплата тарифа',
-                                              payload=f'tariff_{tariff.id}',
-                                              currency='XTR',
-                                              prices=[LabeledPrice(label='XTR', amount=tariff.amount*2)])
+        if tariff.amount > 0:
+            await callback.message.answer_invoice(title='Оплата тарифа',
+                                                  description='Оплата тарифа',
+                                                  payload=f'tariff_{tariff.id}',
+                                                  currency='XTR',
+                                                  prices=[LabeledPrice(label='XTR', amount=tariff.amount*2 )])
+        else:
+            await callback.message.answer('Приобретение тарифа', reply_markup=await kb.free_payment(tariff.id))
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
@@ -400,6 +403,30 @@ async def successful_payment(message: Message, state: FSMContext):
                              reply_markup=kb.developer_profile)
     except Exception:
         await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+@developer.callback_query(F.data.startswith('free-payment_'), st.DeveloperProfile.pay_tariff)
+async def free_payment(callback: CallbackQuery, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        await callback.answer('')
+        tariff = await db.get_tariff(callback.data.split('_')[1])
+        await db.tariff_payed(callback.from_user.id, tariff)
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.DeveloperProfile.profile)
+        developer_info = await db.get_developer(callback.from_user.id)
+        await callback.message.answer(f'<b>Юзернейм:</b> {developer_info.username}\n'
+                             f'<b>Рейтинг:</b> {developer_info.rating if developer_info.rating > 0 else "Нет оценок"}\n'
+                             f'<b>Количество выполненных заказов:</b> {developer_info.completed_orders}\n\n'
+                             f'<b>Тариф:</b> {tariff.name if tariff.name else "Не выбран"}\n'
+                             f'<b>Количество доступных откликов:</b> {developer_info.responses}\n'
+                             f'<b>Дата окончания действия тарифа:</b> {developer_info.subscription_end_date.strftime("%d.%m.%Y")
+                             if developer_info.subscription_end_date else ''}',
+                             reply_markup=kb.developer_profile)
+    except Exception:
+        await callback.message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')
 
 
@@ -835,6 +862,25 @@ async def ok_developer_edit_feedback(message: Message, state: FSMContext):
                              reply_markup=await kb.completed_orders_pagination(orders, 1, total_pages))
         await message.answer('Меню 👇',
                              reply_markup=kb.back)
+    except Exception:
+        await message.answer('Произошла ошибка\n'
+                             'Введите команду /start или свяжитесь с @mesudoteach')
+
+
+"""
+
+Действия в разделе "FAQ"
+----------------------------------------------------------------------------------------------
+"""
+@developer.message(F.text == '💎 FAQ', st.DeveloperMenu.menu)
+async def developer_faq(message: Message, state: FSMContext):
+    # конструкция try except ловит и выводит сообщение об ошибке,
+    # а также не даёт им остановить работу программы
+    try:
+        # устанавливаем нужное FSM состояние
+        await state.set_state(st.FAQ.developer)
+        await message.answer('Часто задаваемые вопросы 👇 \n https://telegra.ph/SudoBot--Birzha-Telegram-botov-09-23',
+                                 reply_markup=kb.back)
     except Exception:
         await message.answer('Произошла ошибка\n'
                              'Введите команду /start или свяжитесь с @mesudoteach')

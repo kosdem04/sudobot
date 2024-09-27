@@ -433,6 +433,20 @@ async def developer_responses_pagination(responses, page, total_pages):
     return kb.as_markup()
 
 
+# функция для отображения Inline кнопок для подтверждения выполнения заказа
+async def free_payment(tariff_id):
+    # Создаем инстанс клавиатуры
+    kb = InlineKeyboardBuilder()
+
+    # Создаем кнопки
+    button = InlineKeyboardButton(text="Бесплатно", callback_data=f"free-payment_{tariff_id}")
+
+    # Добавляем две другие кнопки на одну строку
+    kb.row(button)
+    # возвращаем клавиатуру с параметром для отображения клавиатуры на разных устройствах
+    return kb.as_markup()
+
+
 """
 
 Клавиатуры для администраторов

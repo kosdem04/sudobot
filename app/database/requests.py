@@ -34,6 +34,17 @@ async def get_client(tg_id):
 # берём из БД все заказы конкретного клиента
 async def client_orders(tg_id):
     async with async_session() as session:
+        orders = await session.execute(select(Order).where(Order.client == tg_id))
+        # Получаем результаты запроса из statistics и вызываем scalars(),
+        # чтобы получить скалярные значения (простые значения, а не кортежи).
+        # Затем метод all() используется для извлечения всех результатов запроса.
+        orders = orders.scalars().all()
+        return orders
+
+
+# берём из БД все заказы конкретного клиента
+async def client_available_orders(tg_id):
+    async with async_session() as session:
         orders = await session.execute(select(Order).where(Order.client == tg_id, Order.available == True))
         # Получаем результаты запроса из statistics и вызываем scalars(),
         # чтобы получить скалярные значения (простые значения, а не кортежи).
@@ -44,6 +55,20 @@ async def client_orders(tg_id):
 
 # берём из БД все заказы конкретного клиента
 async def client_orders_pagination(tg_id, page):
+    async with async_session() as session:
+        # Сортируем заказы по дате создания в порядке убывания, пропускаем первые 10 и ограничиваем результат до 5
+        orders = await session.execute(
+            select(Order).where(Order.client == tg_id)
+            .order_by(Order.date.desc())  # Сортировка по дате создания
+            .offset((page - 1) * 5)  # Пропускаем первые 5 заказов
+            .limit(5)  # Ограничение до 10 заказов
+        )
+        orders = orders.scalars().all()
+        return orders
+
+
+# берём из БД все заказы конкретного клиента
+async def client_available_orders_pagination(tg_id, page):
     async with async_session() as session:
         # Сортируем заказы по дате создания в порядке убывания, пропускаем первые 10 и ограничиваем результат до 5
         orders = await session.execute(

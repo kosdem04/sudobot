@@ -476,20 +476,23 @@ async def sure_sendall(message: Message, state: FSMContext):
 async def ok_sendall_sure(message: Message, bot: Bot, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
-    try:
+    #try:
         # берём данные из всех состояний
         tdata = await state.get_data()
         text = tdata['message']  # текст рассылки
         # берём tg_id всех пользователей бота
         recipients = await db.all_users() if tdata['method'] == '1' else await db.all_clients() if tdata['method'] == '2' else await db.all_developers()
         for recipient in recipients:
-            # отправляем каждому пользователю сообщение
-            await bot.send_message(chat_id=recipient.tg_id, text=text)
+            try:
+                # отправляем каждому пользователю сообщение
+                await bot.send_message(chat_id=recipient.tg_id, text=text)
+            except:
+                pass
         # отправляем администратору сообщение, reply_markup — параметр с нужной клавиатурой
         await state.clear()
         await state.set_state(st.AdminMenu.menu)
         # отправляем администратору сообщение, reply_markup — параметр с нужной клавиатурой
         await message.answer('Рассылка успешно завершена', reply_markup=kb.admin_panel)
-    except Exception:
-        await message.answer('Произошла ошибка\n'
-                             'Введите команду /start или свяжитесь с @mesudoteach')
+    #except Exception:
+        #await message.answer('Произошла ошибка\n'
+                             #'Введите команду /start или свяжитесь с @mesudoteach')

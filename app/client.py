@@ -13,6 +13,11 @@ from config import ADMIN_ORDER_CHAT_ID
 client = Router()
 
 
+@client.message(F.text == 'Чат')
+async def cmd_start(message: Message, state: FSMContext):
+    await message.answer(f'ID: {message.chat.id}')
+
+
 @client.message(F.text == '◀️ Назад', st.Register.role)
 @client.message(F.text == '◀️ Назад', st.Register.moderation)
 @client.message(CommandStart())
@@ -118,7 +123,7 @@ async def client_order_list(message: Message, state: FSMContext):
         if not orders:
             # устанавливаем нужное FSM состояние
             await state.set_state(st.ClientOrder.list)
-            await message.answer('У вас нет ни одного активного заказа',
+            await message.answer('У вас нет ни одного заказа',
                                  reply_markup=kb.create_and_back)
         else:
             total_pages = (len(orders) + 5 - 1) // 5  # Общее количество страниц
@@ -170,7 +175,8 @@ async def client_order_info(callback: CallbackQuery, state: FSMContext):
         await state.update_data(order=callback.data.split('_')[1])
         await callback.message.answer(f'Подробности заказа 🔹 \n\n'
                                       f'<b>Название</b>: {order_info.title}\n'
-                             f'<b>Описание</b>:\n{order_info.description}',
+                                      f'<b>Описание</b>:\n{order_info.description}\n\n'
+                                      f'{f"<b>‼️ Заказ на модерации</b>" if not order_info.available else ""}',
                              reply_markup=kb.client_order_menu)
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
@@ -247,7 +253,7 @@ async def ok_add_order(message: Message, bot: Bot, state: FSMContext):
         order = await db.add_order(message.from_user.id ,tdata['title'], tdata['description'])
         await bot.send_message(chat_id=ADMIN_ORDER_CHAT_ID, text=f'‼️ ВНИМАНИЕ ‼️\n\n'
                                                                  f'<b>Новый заказ:</b>\n'
-                                                                 f'<b>TG_ID заказчика:</b> {message.from_user.id}'
+                                                                 f'<b>TG_ID заказчика:</b> {message.from_user.id}\n'
                                                                  f'<b>Название:</b> {tdata['title']}\n'
                                                                  f'<b>Описание:</b>\n{tdata['description']}\n',
                                reply_markup=await kb.order_moderation(order.id))
@@ -256,7 +262,7 @@ async def ok_add_order(message: Message, bot: Bot, state: FSMContext):
         if not orders:
             # устанавливаем нужное FSM состояние
             await state.set_state(st.ClientOrder.list)
-            await message.answer('У вас нет ни одного активного заказа',
+            await message.answer('У вас нет ни одного заказа',
                                  reply_markup=kb.create_and_back)
         else:
             total_pages = (len(orders) + 5 - 1) // 5  # Общее количество страниц
@@ -408,7 +414,7 @@ async def ok_delete_order(message: Message, state: FSMContext):
         if not orders:
             # устанавливаем нужное FSM состояние
             await state.set_state(st.ClientOrder.list)
-            await message.answer('У вас нет ни одного активного заказа',
+            await message.answer('У вас нет ни одного заказа',
                                  reply_markup=kb.create_and_back)
         else:
             total_pages = (len(orders) + 5 - 1) // 5  # Общее количество страниц
@@ -437,7 +443,7 @@ async def client_response_list(message: Message, state: FSMContext):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
     try:
-        orders = await db.client_orders(message.from_user.id)
+        orders = await db.client_available_orders(message.from_user.id)
         if not orders:
             # устанавливаем нужное FSM состояние
             await state.set_state(st.ClientResponse.list)
@@ -450,7 +456,7 @@ async def client_response_list(message: Message, state: FSMContext):
             total_pages = (len(orders) + 5 - 1) // 5  # Общее количество страниц
             await state.update_data(total_order_pages=total_pages)
             await state.update_data(orders_page=1)
-            orders = await db.client_orders_pagination(message.from_user.id, 1)
+            orders = await db.client_available_orders_pagination(message.from_user.id, 1)
             await message.answer(f'<b>Страница 1 из {total_pages}</b>',
                                  reply_markup=await kb.order_total_response_pagination(orders, 1, total_pages))
             await message.answer('Меню 👇',
@@ -469,7 +475,7 @@ async def responses_for_order_pagination(callback: CallbackQuery, state: FSMCont
         await callback.answer('')
         page = int(callback.data.split('_')[1])
         await state.update_data(orders_page=page)
-        orders = await db.client_orders_pagination(callback.from_user.id, page)
+        orders = await db.client_available_orders_pagination(callback.from_user.id, page)
         tdata = await state.get_data()
         total_pages = tdata['total_order_pages']
         await callback.message.edit_text(f'<b>Страница {page} из {total_pages}</b>',
@@ -551,7 +557,7 @@ async def back_to_total_order_responses(callback: CallbackQuery, state: FSMConte
         tdata = await state.get_data()
         page = tdata['orders_page']
         total_pages = tdata['total_order_pages']
-        orders = await db.client_orders_pagination(callback.from_user.id, page)
+        orders = await db.client_available_orders_pagination(callback.from_user.id, page)
         await callback.message.edit_text(f'<b>Страница {page} из {total_pages}</b>',
                              reply_markup=await kb.order_total_response_pagination(orders, page, total_pages))
     except Exception:
@@ -681,7 +687,7 @@ async def cancel_order_complete(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(f'<b>Разработчик:</b> @{response.developer_rel.username}\n'
                                          f'<b>Рейтинг:</b> {response.developer_rel.rating if response.developer_rel.rating > 0 else 'Нет оценок'}\n'
                                          f'<b>Отклик:</b> {response.description}',
-                                         reply_markup=await kb.client_response_menu(response.developer_rel.username, response.id))
+                                         reply_markup=await kb.client_response_menu(response.developer_rel.username, response))
     except Exception:
         await callback.message.answer('Произошла ошибка\n'
                                       'Введите команду /start или свяжитесь с @mesudoteach')
@@ -1020,7 +1026,7 @@ async def client_faq(message: Message, state: FSMContext):
     try:
         # устанавливаем нужное FSM состояние
         await state.set_state(st.FAQ.client)
-        await message.answer('Часто задаваемые вопросы',
+        await message.answer('Часто задаваемые вопросы 👇 \n https://telegra.ph/',
                                  reply_markup=kb.back)
     except Exception:
         await message.answer('Произошла ошибка\n'
@@ -1039,29 +1045,29 @@ async def client_faq(message: Message, state: FSMContext):
 async def moderation_passed(callback: CallbackQuery, bot: Bot):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
-    try:
+    #try:
         # ответ на callback
         await callback.answer('Спасибо за работу')
         await callback.message.delete()
         # извлекаем из callback id запроса
         order = await db.available_order(callback.data.split('_')[1])
         await bot.send_message(chat_id=order.client, text='<b>‼️ Ваш заказ прошёл модерацию</b>')
-    except Exception:
-        await callback.message.answer('Произошла ошибка\n'
-                             'Введите команду /start или свяжитесь с @mesudoteach')
+    #except Exception:
+        #await callback.message.answer('Произошла ошибка\n'
+                             #'Введите команду /start или свяжитесь с @mesudoteach')
 
 
 @client.callback_query(lambda callback: callback.message.chat.id == ADMIN_ORDER_CHAT_ID, F.data.startswith('moderation-failed_'))  # хэндлер срабатывает только тогда, когда в нужный чат присылается сообщение
 async def moderation_failed(callback: CallbackQuery, bot: Bot):
     # конструкция try except ловит и выводит сообщение об ошибке,
     # а также не даёт им остановить работу программы
-    try:
+    #try:
         # ответ на callback
         await callback.answer('Спасибо за работу')
         await callback.message.delete()
         # извлекаем из callback id запроса
         order = await db.delete_order(callback.data.split('_')[1])
         await bot.send_message(chat_id=order.client, text='<b>‼️ Ваш заказ не прошёл модерацию</b>')
-    except Exception:
-        await callback.message.answer('Произошла ошибка\n'
-                             'Введите команду /start или свяжитесь с @mesudoteach')
+    #except Exception:
+        #await callback.message.answer('Произошла ошибка\n'
+                             #'Введите команду /start или свяжитесь с @mesudoteach')
